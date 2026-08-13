@@ -77,6 +77,7 @@ type TopologyMatch struct {
 	preemptionMode      apiconfig.PreemptionMode
 }
 
+var _ fwk.PreFilterPlugin = &TopologyMatch{}
 var _ fwk.FilterPlugin = &TopologyMatch{}
 var _ fwk.ReservePlugin = &TopologyMatch{}
 var _ fwk.ScorePlugin = &TopologyMatch{}

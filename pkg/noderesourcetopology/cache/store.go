@@ -237,7 +237,6 @@ func getNUMAPlacementInfo(lh logr.Logger, nrt topologyv1alpha2.NodeResourceTopol
 			count++
 		}
 	}
-
 	if count != payload.Containers {
 		lh.V(2).Info("inconsistent containers count", "node", nname, "computed", count, "expected", payload.Containers)
 		return numaplacement.EncodedInfo{}

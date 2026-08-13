@@ -27,8 +27,11 @@ import (
 	v1qos "k8s.io/kubernetes/pkg/apis/core/v1/helper/qos"
 	kubeletconfig "k8s.io/kubernetes/pkg/kubelet/apis/config"
 	bm "k8s.io/kubernetes/pkg/kubelet/cm/topologymanager/bitmask"
+
+	apiconfig "sigs.k8s.io/scheduler-plugins/apis/config"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/logging"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/nodeconfig"
+	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/preemption"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/resourcerequests"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/stringify"
 	"sigs.k8s.io/scheduler-plugins/pkg/util"
@@ -199,6 +202,23 @@ func (tm *TopologyMatch) Filter(ctx context.Context, cycleState fwk.CycleState, 
 		return nil
 	}
 
+	victims, err := getVictimPods(cycleState, tm.preemptionMode)
+	if err != nil {
+		lh.V(6).Info("preemption stack not initialized; proceed with normal filtering", "error", err)
+	}
+	isPreemptionFlow := len(victims) > 0
+	if isPreemptionFlow {
+		lh.V(4).Info("preemption flow detected", "victimsCount", len(victims))
+		numaPlacementInfo := tm.nrtCache.GetCachedNUMAPlacementInfo(nodeName)
+		if numaPlacementInfo != nil && numaPlacementInfo.Containers() != 0 {
+			nodeTopology, err = preemption.GetNRTPostPodsEviction(lh, nodeTopology.DeepCopy(), victims, numaPlacementInfo)
+			if err != nil {
+				return fwk.NewStatus(fwk.Unschedulable, "eviction simulation in NRT is not possible:"+err.Error())
+			}
+			lh.V(4).Info("running with NRT modified by eviction simulation")
+		}
+	}
+
 	conf := nodeconfig.TopologyManagerFromNodeResourceTopology(lh, nodeTopology)
 
 	lh.V(4).Info("found nrt data", "object", stringify.NodeResourceTopologyResources(nodeTopology), "conf", conf.String())
@@ -218,7 +238,7 @@ func (tm *TopologyMatch) Filter(ctx context.Context, cycleState fwk.CycleState, 
 		qos:             qos,
 	}
 	status := handler(lh, pod, &fi)
-	if status != nil {
+	if !isPreemptionFlow && status != nil {
 		tm.nrtCache.NodeMaybeOverReserved(nodeName, pod)
 	}
 	return status
@@ -235,4 +255,16 @@ func filterHandlerFromTopologyManager(conf nodeconfig.TopologyManager) (filterFn
 		return singleNUMAContainerLevelHandler, "container"
 	}
 	return nil, "" // cannot happen
+}
+
+func getVictimPods(cycleState fwk.CycleState, preemptionMode apiconfig.PreemptionMode) ([]v1.Pod, error) {
+	if preemptionMode == apiconfig.PreemptionDisabled {
+		return nil, nil
+	}
+
+	ps, err := readPreemptionStack(cycleState)
+	if err != nil {
+		return nil, err
+	}
+	return ps.GetPods(), nil
 }
