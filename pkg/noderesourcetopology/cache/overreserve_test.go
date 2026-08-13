@@ -887,7 +887,7 @@ func TestResyncReserveInterleaved(t *testing.T) {
 	}
 	fakePodLister.AddPod(runningPod)
 
-	// Step 2: Resync begins — get dirty nodes, then compute NRT updates.
+	// Step 2: Resync begins: get dirty nodes, then compute NRT updates.
 	// The fingerprint mismatch means nrtUpdates will be empty for node1.
 	lh := testr.New(t)
 	nodes := nrtCache.GetDesyncedNodes(lh)
@@ -897,8 +897,7 @@ func TestResyncReserveInterleaved(t *testing.T) {
 		t.Fatalf("expected no NRT updates due to fingerprint mismatch, got %d", len(nrtUpdates))
 	}
 
-	// Step 3: concurrent Reserve() arrives between MakeNRTUpdatesForNodes
-	// and FlushNodes — the exact window where the race occurred.
+	// Step 3: concurrent Reserve() arrives between MakeNRTUpdatesForNodes and FlushNodes
 	concurrentPod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "pod2",
@@ -924,11 +923,11 @@ func TestResyncReserveInterleaved(t *testing.T) {
 	}
 	nrtCache.ReserveNodeResources("node1", concurrentPod)
 
-	// Step 4: Resync finishes — FlushNodes with the (empty) update list.
+	// Step 4: FlushNodes with the (empty) update list.
 	nrtCache.FlushNodes(lh, nrtUpdates...)
 
-	// Verify: node1 must still be dirty — the resync failed (fingerprint
-	// mismatch) and Reserve must NOT have cleared the dirty bit.
+	// Verify: node1 must still be dirty, because the resync failed (fingerprint mismatch)
+	// and Reserve must NOT have cleared the dirty bit.
 	dirtyNodes := nrtCache.GetDesyncedNodes(lh)
 	if dirtyNodes.DirtyCount() != 1 {
 		t.Errorf("node should stay dirty after failed resync + concurrent reserve, got dirty count: %d", dirtyNodes.DirtyCount())
