@@ -37,6 +37,7 @@ import (
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
+	"k8s.io/utils/ptr"
 
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -145,6 +146,7 @@ func cleanupNodeResourceTopologies(t *testing.T, ctx context.Context, client ctr
 func makeResourceAllocationScoreArgs(strategy *scheconfig.ScoringStrategy) *scheconfig.NodeResourceTopologyMatchArgs {
 	return &scheconfig.NodeResourceTopologyMatchArgs{
 		ScoringStrategy: *strategy,
+		PreemptionMode:  ptr.To(scheconfig.PreemptionDisabled),
 	}
 }
 

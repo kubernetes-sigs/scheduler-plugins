@@ -43,6 +43,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/profile"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 	imageutils "k8s.io/kubernetes/test/utils/image"
+	"k8s.io/utils/ptr"
 
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -97,6 +98,7 @@ func TestTopologyMatchPluginValidation(t *testing.T) {
 		Name: noderesourcetopology.Name,
 		Args: &scheconfig.NodeResourceTopologyMatchArgs{
 			ScoringStrategy: scheconfig.ScoringStrategy{Type: "incorrect"},
+			PreemptionMode:  ptr.To(scheconfig.PreemptionDisabled),
 		},
 	})
 
@@ -175,6 +177,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 		Name: noderesourcetopology.Name,
 		Args: &scheconfig.NodeResourceTopologyMatchArgs{
 			ScoringStrategy: scheconfig.ScoringStrategy{Type: scheconfig.MostAllocated},
+			PreemptionMode:  ptr.To(scheconfig.PreemptionDisabled),
 		},
 	})
 	cfg.Profiles = append(cfg.Profiles,

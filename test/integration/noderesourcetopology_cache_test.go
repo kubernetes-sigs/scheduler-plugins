@@ -45,6 +45,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
 	fwkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
+	"k8s.io/utils/ptr"
 
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -523,6 +524,7 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 				Args: &schedconfig.NodeResourceTopologyMatchArgs{
 					ScoringStrategy:          schedconfig.ScoringStrategy{Type: schedconfig.LeastAllocated},
 					CacheResyncPeriodSeconds: defaultCacheResyncPeriodSeconds,
+					PreemptionMode:           ptr.To(schedconfig.PreemptionDisabled),
 				},
 			})
 
@@ -1128,6 +1130,7 @@ func makeNRTSchedTestContext(t *testing.T, cacheArgs *schedconfig.NodeResourceTo
 		ScoringStrategy:          schedconfig.ScoringStrategy{Type: schedconfig.LeastAllocated},
 		CacheResyncPeriodSeconds: defaultCacheResyncPeriodSeconds,
 		Cache:                    cacheArgs,
+		PreemptionMode:           ptr.To(schedconfig.PreemptionDisabled),
 	}
 
 	cfg.Profiles[0].Plugins.Filter.Enabled = append(cfg.Profiles[0].Plugins.Filter.Enabled, schedapi.Plugin{Name: noderesourcetopology.Name})
@@ -1209,6 +1212,7 @@ func discardReservedSchedulerProfile() schedapi.KubeSchedulerProfile {
 	nodeLockingMatchArgs := schedconfig.NodeResourceTopologyMatchArgs{
 		ScoringStrategy:      schedconfig.ScoringStrategy{Type: schedconfig.LeastAllocated},
 		DiscardReservedNodes: true,
+		PreemptionMode:       ptr.To(schedconfig.PreemptionDisabled),
 	}
 
 	return schedapi.KubeSchedulerProfile{
