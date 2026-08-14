@@ -20,6 +20,8 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -36,6 +38,7 @@ import (
 
 	"sigs.k8s.io/scheduler-plugins/pkg/capacityscheduling"
 	"sigs.k8s.io/scheduler-plugins/pkg/coscheduling"
+	"sigs.k8s.io/scheduler-plugins/pkg/highloadfilter"
 	"sigs.k8s.io/scheduler-plugins/pkg/networkaware/networkoverhead"
 	"sigs.k8s.io/scheduler-plugins/pkg/networkaware/topologicalsort"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesources"
@@ -60,6 +63,10 @@ func TestSetup(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
+	watcherServer := httptest.NewServer(http.HandlerFunc(func(resp http.ResponseWriter, _ *http.Request) {
+		resp.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer watcherServer.Close()
 
 	// temp dir
 	tmpDir, err := os.MkdirTemp("", "scheduler-options")
@@ -346,6 +353,35 @@ profiles:
         memory: 0.5
       watcherAddress: http://deadbeef:2020
 `, configKubeconfig)), os.FileMode(0600)); err != nil {
+		t.Fatal(err)
+	}
+
+	// HighLoadFilter plugin config with an independent load-watcher service.
+	highLoadFilterConfigWithArgsFile := filepath.Join(tmpDir, "highLoadFilter-with-args.yaml")
+	if err := os.WriteFile(highLoadFilterConfigWithArgsFile, []byte(fmt.Sprintf(`
+apiVersion: kubescheduler.config.k8s.io/v1
+kind: KubeSchedulerConfiguration
+clientConnection:
+  kubeconfig: "%s"
+profiles:
+- plugins:
+    preFilter:
+      enabled:
+      - name: HighLoadFilter
+    filter:
+      enabled:
+      - name: HighLoadFilter
+  pluginConfig:
+  - name: HighLoadFilter
+    args:
+      watcherAddress: %s
+      usageThresholds:
+        cpu: 65
+        memory: 95
+      failOpen: true
+      metricsUpdateIntervalSeconds: 30
+      nodeMetricExpirationSeconds: 180
+`, configKubeconfig, watcherServer.URL)), os.FileMode(0600)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -666,6 +702,29 @@ profiles:
 					PostFilter: defaults.ExpandedPluginsV1.PostFilter,
 					PreScore:   config.PluginSet{Enabled: []config.Plugin{{Name: lowriskovercommitment.Name}}},
 					Score:      config.PluginSet{Enabled: []config.Plugin{{Name: lowriskovercommitment.Name, Weight: 1}}},
+					Reserve:    defaults.ExpandedPluginsV1.Reserve,
+					PreBind:    defaults.ExpandedPluginsV1.PreBind,
+				},
+			},
+		},
+		{
+			name:            "single profile config - HighLoadFilter with args",
+			flags:           []string{"--config", highLoadFilterConfigWithArgsFile},
+			registryOptions: []app.Option{app.WithPlugin(highloadfilter.Name, highloadfilter.New)},
+			wantPlugins: map[string]*config.Plugins{
+				"default-scheduler": {
+					PreEnqueue: defaults.ExpandedPluginsV1.PreEnqueue,
+					QueueSort:  defaults.ExpandedPluginsV1.QueueSort,
+					Bind:       defaults.ExpandedPluginsV1.Bind,
+					PreFilter: config.PluginSet{
+						Enabled: append(defaults.ExpandedPluginsV1.PreFilter.Enabled, config.Plugin{Name: highloadfilter.Name}),
+					},
+					Filter: config.PluginSet{
+						Enabled: append(defaults.ExpandedPluginsV1.Filter.Enabled, config.Plugin{Name: highloadfilter.Name}),
+					},
+					PostFilter: defaults.ExpandedPluginsV1.PostFilter,
+					PreScore:   defaults.ExpandedPluginsV1.PreScore,
+					Score:      defaults.ExpandedPluginsV1.Score,
 					Reserve:    defaults.ExpandedPluginsV1.Reserve,
 					PreBind:    defaults.ExpandedPluginsV1.PreBind,
 				},

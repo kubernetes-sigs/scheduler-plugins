@@ -333,6 +333,38 @@ profiles:
 	}
 }
 
+func TestHighLoadFilterArgsDecode(t *testing.T) {
+	data := []byte(`
+apiVersion: kubescheduler.config.k8s.io/v1
+kind: HighLoadFilterArgs
+watcherAddress: https://load-watcher.example.com
+usageThresholds:
+  cpu: 65
+  memory: 95
+failOpen: false
+metricsUpdateIntervalSeconds: 20
+nodeMetricExpirationSeconds: 120
+`)
+
+	obj, _, err := Codecs.UniversalDecoder().Decode(data, nil, nil)
+	if err != nil {
+		t.Fatalf("Decode() error = %v", err)
+	}
+	want := &config.HighLoadFilterArgs{
+		WatcherAddress: "https://load-watcher.example.com",
+		UsageThresholds: config.HighLoadFilterUsageThresholds{
+			CPU:    65,
+			Memory: 95,
+		},
+		FailOpen:                     false,
+		MetricsUpdateIntervalSeconds: 20,
+		NodeMetricExpirationSeconds:  120,
+	}
+	if diff := cmp.Diff(want, obj); diff != "" {
+		t.Fatalf("decoded HighLoadFilterArgs mismatch (-want,+got):\n%s", diff)
+	}
+}
+
 func TestCodecsEncodePluginConfig(t *testing.T) {
 	testCases := []struct {
 		name    string
