@@ -92,6 +92,8 @@ var (
 
 	defaultInformerMode = CacheInformerDedicated
 
+	defaultPreemptionMode = PreemptionDisabled
+
 	// Defaults for NetworkOverhead
 	// DefaultWeightsName contains the default costs to be used by networkAware plugins
 	DefaultWeightsName = "UserDefined"
@@ -214,6 +216,10 @@ func SetDefaults_NodeResourceTopologyMatchArgs(obj *NodeResourceTopologyMatchArg
 	}
 	if obj.Cache.InformerMode == nil {
 		obj.Cache.InformerMode = &defaultInformerMode
+	}
+
+	if obj.PreemptionMode == nil {
+		obj.PreemptionMode = &defaultPreemptionMode
 	}
 }
 

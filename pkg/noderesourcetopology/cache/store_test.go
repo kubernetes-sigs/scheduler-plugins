@@ -25,13 +25,17 @@ import (
 
 	"github.com/go-logr/logr/testr"
 	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
+	"github.com/k8stopologyawareschedwg/numaplacement"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/sets"
 	podlisterv1 "k8s.io/client-go/listers/core/v1"
+	"k8s.io/klog/v2"
+	kubeletconfig "k8s.io/kubernetes/pkg/kubelet/apis/config"
 	apiconfig "sigs.k8s.io/scheduler-plugins/apis/config"
+	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/nodeconfig"
 
 	"github.com/k8stopologyawareschedwg/podfingerprint"
 )
@@ -379,12 +383,419 @@ func TestNRTStoreUpdate(t *testing.T) {
 			"none",
 		},
 	}
-	ns.Update(nrt3)
+	ns.Update(nrtUpdate{
+		nrt: nrt3,
+	})
 	nrt3.TopologyPolicies[0] = "best-effort"
 
 	obj3 := ns.GetNRTCopyByNodeName("node-2")
 	if obj3.TopologyPolicies[0] != "none" { // original value when the object was first added to the store
 		t.Errorf("stored value is not an independent copy")
+	}
+}
+
+func TestNRTStoreUpdateWithPods(t *testing.T) {
+	nrt := &topologyv1alpha2.NodeResourceTopology{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "node-0",
+		},
+		Attributes: []topologyv1alpha2.AttributeInfo{
+			{
+				Name:  numaplacement.AttributeMetadata,
+				Value: "npv0v001::ve=leb89::cc=3::nn=2::bn=1",
+			},
+			{
+				Name:  nodeconfig.AttributePolicy,
+				Value: kubeletconfig.SingleNumaNodeTopologyManagerPolicy,
+			},
+		},
+		Zones: topologyv1alpha2.ZoneList{
+			{
+				Name: "node-0",
+				Type: "Node",
+				Attributes: []topologyv1alpha2.AttributeInfo{
+					{
+						Name:  numaplacement.AttributeVector,
+						Value: "!", // this is the encoding that tells cnt1 is on this NUMA
+					},
+				},
+				Resources: topologyv1alpha2.ResourceInfoList{
+					MakeTopologyResInfo(cpu, "20", "20"),
+					MakeTopologyResInfo(memory, "32Gi", "32Gi"),
+				},
+			},
+			{
+				Name: "node-1",
+				Type: "Node",
+				Resources: topologyv1alpha2.ResourceInfoList{
+					MakeTopologyResInfo(cpu, "20", "20"),
+					MakeTopologyResInfo(memory, "32Gi", "32Gi"),
+					MakeTopologyResInfo(nicName, "8", "8"),
+				},
+			},
+		},
+	}
+	cnt0 := numaplacement.ContainerID{Namespace: "ns-0", PodName: "pod-0", ContainerName: "container-0"}
+	cnt1 := numaplacement.ContainerID{Namespace: "ns-0", PodName: "pod-1", ContainerName: "container-1"}
+	cnt2 := numaplacement.ContainerID{Namespace: "ns-0", PodName: "pod-1", ContainerName: "container-2"}
+	pods := []podData{
+		{
+			Namespace:        "ns-0",
+			Name:             "pod-0",
+			PinnedContainers: []string{cnt0.ContainerName},
+		},
+		{
+			Namespace:        "ns-0",
+			Name:             "pod-1",
+			PinnedContainers: []string{cnt1.ContainerName, cnt2.ContainerName},
+		},
+		{
+			Namespace: "ns-1",
+			Name:      "pod-2",
+		},
+	}
+
+	ns := newNrtStore(klog.Background(), []topologyv1alpha2.NodeResourceTopology{*nrt})
+	ns.Update(nrtUpdate{
+		nrt:  nrt,
+		pods: pods,
+	})
+	updatedNUMAPlacement := ns.GetNUMAPlacementInfoByNodeName(nrt.Name)
+	if updatedNUMAPlacement == nil {
+		t.Fatalf("missing NUMAPlacement info after update")
+	}
+	expectedContainers := 3
+	if updatedNUMAPlacement.Containers() != expectedContainers {
+		t.Errorf("unexpected number of containers: got %d expected %d", updatedNUMAPlacement.Containers(), expectedContainers)
+	}
+
+	// check that the NUMAPlacement info is for the expected containers
+	hostingNUMAForCnt0, err := updatedNUMAPlacement.NUMAAffinity(cnt0)
+	if err != nil {
+		t.Fatalf("failed to get NUMA affinity for container %s: %v", cnt0.String(), err)
+	}
+	if hostingNUMAForCnt0 != 1 {
+		t.Errorf("container %s is hosted on NUMA %d, expected %d", cnt0.String(), hostingNUMAForCnt0, 1)
+	}
+
+	hostingNUMAForCnt1, err := updatedNUMAPlacement.NUMAAffinity(cnt1)
+	if err != nil {
+		t.Fatalf("failed to get NUMA affinity for container %s: %v", cnt1.String(), err)
+	}
+	if hostingNUMAForCnt1 != 0 {
+		t.Errorf("container %s is hosted on NUMA %d, expected %d", cnt1.String(), hostingNUMAForCnt1, 0)
+	}
+
+	hostingNUMAForCnt2, err := updatedNUMAPlacement.NUMAAffinity(cnt2)
+	if err != nil {
+		t.Fatalf("failed to get NUMA affinity for container %s: %v", cnt2.String(), err)
+	}
+	if hostingNUMAForCnt2 != 1 {
+		t.Errorf("container %s is hosted on NUMA %d, expected %d", cnt2, hostingNUMAForCnt2, 1)
+	}
+
+	// update the NRT and pods such that cnt0 is gone
+	pods = pods[1:]
+	nrt.Attributes[0].Value = "npv0v001::ve=leb89::cc=2::nn=2::bn=1"
+	// mimick removing cnt0 from the node hence removing the vector attribute for that NUMA
+	nrt.Zones[0].Attributes = []topologyv1alpha2.AttributeInfo{}
+	ns.Update(nrtUpdate{
+		nrt:  nrt,
+		pods: pods,
+	})
+	updatedNUMAPlacement = ns.GetNUMAPlacementInfoByNodeName(nrt.Name)
+	if updatedNUMAPlacement == nil {
+		t.Fatalf("missing NUMAPlacement info after update")
+	}
+	if updatedNUMAPlacement.Containers() != 2 {
+		t.Errorf("unexpected number of containers: got %d expected 2", updatedNUMAPlacement.Containers())
+	}
+
+	hostingNUMAForCnt0, err = updatedNUMAPlacement.NUMAAffinity(cnt0)
+	if err != numaplacement.ErrUnknownContainer {
+		t.Fatalf("expected error getting NUMA affinity for no longer existing container %s but got %v", cnt0.String(), err)
+	}
+	if hostingNUMAForCnt0 != -1 {
+		t.Errorf("container %s is hosted on NUMA %d, expected %d", cnt0.String(), hostingNUMAForCnt0, -1)
+	}
+
+	hostingNUMAForCnt1, err = updatedNUMAPlacement.NUMAAffinity(cnt1)
+	if err != nil {
+		t.Fatalf("failed to get NUMA affinity for container %s: %v", cnt1.String(), err)
+	}
+	if hostingNUMAForCnt1 != 1 {
+		t.Errorf("container %s is hosted on NUMA %d, expected 1", cnt1.String(), hostingNUMAForCnt1)
+	}
+
+}
+
+// TestNRTStoreUpdatePodsIsIndependentCopy verifies that Update() stores a deep copy of the
+// given pods, so later mutations to the caller's slice (including its elements' nested
+// PinnedContainers slice) don't leak into the store.
+func TestNRTStoreUpdatePodsIsIndependentCopy(t *testing.T) {
+	nrt := &topologyv1alpha2.NodeResourceTopology{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "node-0",
+		},
+	}
+	pods := []podData{
+		{
+			Namespace:        "ns-0",
+			Name:             "pod-0",
+			PinnedContainers: []string{"container-0"},
+		},
+	}
+
+	ns := newNrtStore(testr.New(t), nil)
+	ns.Update(nrtUpdate{
+		nrt:  nrt,
+		pods: pods,
+	})
+
+	// mutate the source slice and its elements after Update: none of this should
+	// be observable in the store's copy.
+	pods[0].Name = "pod-mutated"
+	pods[0].PinnedContainers[0] = "container-mutated"
+	pods = append(pods, podData{Namespace: "ns-0", Name: "pod-1"})
+
+	entry, ok := ns.data[nrt.Name]
+	if !ok {
+		t.Fatalf("cache entry missing after Update")
+	}
+	storedPods := entry.nrtUpdate.pods
+	if len(storedPods) != 1 {
+		t.Fatalf("stored pods length changed after mutating source slice: got %d expected 1", len(storedPods))
+	}
+	if storedPods[0].Name != "pod-0" {
+		t.Errorf("stored pod name is not an independent copy: got %q expected %q", storedPods[0].Name, "pod-0")
+	}
+	if storedPods[0].PinnedContainers[0] != "container-0" {
+		t.Errorf("stored pod PinnedContainers is not an independent copy: got %q expected %q", storedPods[0].PinnedContainers[0], "container-0")
+	}
+}
+
+// TestNRTStoreLazyDecodeCaching verifies that NUMA placement decoding is deferred
+// to the first GetNUMAPlacementInfoByNodeName call and the result is cached: a second
+// call returns the identical pointer without re-running the decode.
+func TestNRTStoreLazyDecodeCaching(t *testing.T) {
+	podData := []podData{
+		{
+			Namespace: "ns-0", Name: "pod-0",
+			PinnedContainers: []string{"container-0"},
+		},
+		{
+			Namespace: "ns-0", Name: "pod-1",
+			PinnedContainers: []string{"container-1", "container-2"},
+		},
+	}
+	// this nrt matches podData
+	nrt := &topologyv1alpha2.NodeResourceTopology{
+		ObjectMeta: metav1.ObjectMeta{Name: "node-lazy-test"},
+		Attributes: []topologyv1alpha2.AttributeInfo{
+			{Name: numaplacement.AttributeMetadata, Value: "npv0v001::ve=leb89::cc=3::nn=2::bn=1"},
+			{Name: nodeconfig.AttributePolicy, Value: kubeletconfig.SingleNumaNodeTopologyManagerPolicy},
+		},
+		Zones: topologyv1alpha2.ZoneList{
+			{
+				Name: "node-0",
+				Type: "Node",
+				Attributes: []topologyv1alpha2.AttributeInfo{
+					{Name: numaplacement.AttributeVector, Value: "!"},
+				},
+			},
+			{
+				Name: "node-1",
+				Type: "Node",
+				Attributes: []topologyv1alpha2.AttributeInfo{
+					{Name: numaplacement.AttributeVector, Value: ""},
+				},
+			},
+		},
+	}
+
+	ns := newNrtStore(klog.Background(), nil)
+	ns.Update(nrtUpdate{
+		nrt:  nrt,
+		pods: podData,
+	})
+
+	// Verify that the entry has not been decoded yet
+	entry, ok := ns.data[nrt.Name]
+	if !ok {
+		t.Fatal("cache entry missing after Update")
+	}
+	if entry.numaPlacement != nil {
+		t.Fatal("numaPlacement should be nil before first Get (lazy init)")
+	}
+
+	// First Get triggers decode and caches the result.
+	first := ns.GetNUMAPlacementInfoByNodeName(nrt.Name)
+	if first == nil {
+		t.Fatal("GetNUMAPlacementInfoByNodeName returned nil after first call")
+	}
+	entry = ns.data[nrt.Name]
+	if entry.numaPlacement == nil {
+		t.Fatal("numaPlacement should be set after first Get")
+	}
+
+	// Second Get must return the same pointer — no re-decode.
+	second := ns.GetNUMAPlacementInfoByNodeName(nrt.Name)
+	if first != second {
+		t.Fatal("second Get returned a different pointer: caching did not work")
+	}
+
+	// Update invalidates the memo: a fresh Update must clear numaPlacement.
+	ns.Update(nrtUpdate{
+		nrt:  nrt,
+		pods: podData,
+	})
+	entry = ns.data[nrt.Name]
+	if entry.numaPlacement != nil {
+		t.Fatal("numaPlacement should be nil after a new Update (memo invalidated)")
+	}
+}
+
+func TestNRTStoreUpdateWithoutPods(t *testing.T) {
+	nrt := &topologyv1alpha2.NodeResourceTopology{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "node-0",
+		},
+		Attributes: []topologyv1alpha2.AttributeInfo{
+			{
+				Name:  numaplacement.AttributeMetadata,
+				Value: "npv0v001::ve=leb89::cc=0::nn=2::bn=0",
+			},
+			{
+				Name:  nodeconfig.AttributePolicy,
+				Value: kubeletconfig.SingleNumaNodeTopologyManagerPolicy,
+			},
+		},
+	}
+
+	ns := newNrtStore(klog.Background(), []topologyv1alpha2.NodeResourceTopology{*nrt})
+	ns.Update(nrtUpdate{
+		nrt:  nrt,
+		pods: []podData{},
+	})
+	numaPlacement := ns.GetNUMAPlacementInfoByNodeName(nrt.Name)
+	if numaPlacement == nil {
+		t.Fatalf("missing NUMAPlacement info after update")
+	}
+	if numaPlacement.Containers() != 0 {
+		t.Errorf("unexpected containers in NUMAPlacement: got %d expected %d", numaPlacement.Containers(), 0)
+	}
+}
+
+func TestNRTStoreUpdateNoNUMAPlacementDueToPolicy(t *testing.T) {
+	nrt := &topologyv1alpha2.NodeResourceTopology{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "node-0",
+		},
+		Attributes: []topologyv1alpha2.AttributeInfo{
+			{
+				Name:  nodeconfig.AttributePolicy,
+				Value: "best-effort", // not single-numa-node
+			},
+		},
+	}
+	pods := []podData{
+		{
+			Namespace:        "ns-0",
+			Name:             "pod-0",
+			PinnedContainers: []string{"container-0"},
+		},
+	}
+
+	ns := newNrtStore(klog.Background(), []topologyv1alpha2.NodeResourceTopology{*nrt})
+	ns.Update(nrtUpdate{
+		nrt:  nrt,
+		pods: pods,
+	})
+	numaPlacement := ns.GetNUMAPlacementInfoByNodeName(nrt.Name)
+	if numaPlacement == nil {
+		t.Fatalf("missing NUMAPlacement info after update")
+	}
+	if numaPlacement.Containers() != 0 {
+		t.Errorf("unexpected containers in NUMAPlacement: got %d expected %d", numaPlacement.Containers(), 0)
+	}
+}
+
+func TestNRTStoreUpdateNoNUMAPlacementDueToMissingMetadata(t *testing.T) {
+	nrt := &topologyv1alpha2.NodeResourceTopology{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "node-0",
+		},
+		Attributes: []topologyv1alpha2.AttributeInfo{
+			{
+				Name:  nodeconfig.AttributePolicy,
+				Value: kubeletconfig.SingleNumaNodeTopologyManagerPolicy,
+			},
+			// no metadata attribute
+		},
+	}
+	pods := []podData{
+		{
+			Namespace:        "ns-0",
+			Name:             "pod-0",
+			PinnedContainers: []string{"container-0"},
+		},
+	}
+
+	ns := newNrtStore(klog.Background(), []topologyv1alpha2.NodeResourceTopology{*nrt})
+	ns.Update(nrtUpdate{
+		nrt:  nrt,
+		pods: pods,
+	})
+	numaPlacement := ns.GetNUMAPlacementInfoByNodeName(nrt.Name)
+	if numaPlacement == nil {
+		t.Fatalf("missing NUMAPlacement info after update")
+	}
+	if numaPlacement.Containers() != 0 {
+		t.Errorf("unexpected containers in NUMAPlacement: got %d expected %d", numaPlacement.Containers(), 0)
+	}
+}
+
+func TestNRTStoreUpdateNoNUMAPlacementDueToInconsistentContainersCount(t *testing.T) {
+	nrt := &topologyv1alpha2.NodeResourceTopology{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "node-0",
+		},
+		Attributes: []topologyv1alpha2.AttributeInfo{
+			{
+				Name:  numaplacement.AttributeMetadata,
+				Value: "npv0v001::ve=leb89::cc=5::nn=2::bn=1", // claims 5 containers
+			},
+			{
+				Name:  nodeconfig.AttributePolicy,
+				Value: kubeletconfig.SingleNumaNodeTopologyManagerPolicy,
+			},
+		},
+	}
+	pods := []podData{
+		{
+			Namespace:        "ns-0",
+			Name:             "pod-0",
+			PinnedContainers: []string{"container-0", "container-1"},
+		},
+		{
+			Namespace:        "ns-0",
+			Name:             "pod-1",
+			PinnedContainers: []string{"container-0"},
+		},
+		// 3 exclusive containers total
+	}
+
+	ns := newNrtStore(klog.Background(), []topologyv1alpha2.NodeResourceTopology{*nrt})
+	ns.Update(nrtUpdate{
+		nrt:  nrt,
+		pods: pods,
+	})
+	numaPlacement := ns.GetNUMAPlacementInfoByNodeName(nrt.Name)
+	if numaPlacement == nil {
+		t.Fatalf("missing NUMAPlacement info after update")
+	}
+	if numaPlacement.Containers() != 0 {
+		t.Errorf("unexpected containers in NUMAPlacement: got %d expected %d", numaPlacement.Containers(), 0)
 	}
 }
 

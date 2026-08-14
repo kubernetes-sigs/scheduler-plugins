@@ -26,6 +26,7 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/klog/v2"
 	fwk "k8s.io/kube-scheduler/framework"
+	"k8s.io/utils/ptr"
 
 	apiconfig "sigs.k8s.io/scheduler-plugins/apis/config"
 	"sigs.k8s.io/scheduler-plugins/apis/config/validation"
@@ -74,8 +75,10 @@ type TopologyMatch struct {
 	nrtCache            nrtcache.Interface
 	scoreStrategyFunc   scoreStrategyFn
 	scoreStrategyType   apiconfig.ScoringStrategyType
+	preemptionMode      apiconfig.PreemptionMode
 }
 
+var _ fwk.PreFilterPlugin = &TopologyMatch{}
 var _ fwk.FilterPlugin = &TopologyMatch{}
 var _ fwk.ReservePlugin = &TopologyMatch{}
 var _ fwk.ScorePlugin = &TopologyMatch{}
@@ -100,6 +103,11 @@ func New(ctx context.Context, args runtime.Object, handle fwk.Handle) (fwk.Plugi
 	if err := validation.ValidateNodeResourceTopologyMatchArgs(nil, tcfg); err != nil {
 		return nil, err
 	}
+
+	// this is not needed for production flow because by the time the plugin is created,
+	// the args would already have the preemption mode normalized. However we keep it to ensure
+	// no panics while addressing the value of a nil pointer.
+	tcfg.PreemptionMode = ptr.To(getPreemptionMode(lh, tcfg))
 
 	nrtCache, err := initNodeTopologyInformer(ctx, lh, tcfg, handle)
 	if err != nil {
@@ -128,6 +136,7 @@ func New(ctx context.Context, args runtime.Object, handle fwk.Handle) (fwk.Plugi
 		nrtCache:            nrtCache,
 		scoreStrategyFunc:   strategy,
 		scoreStrategyType:   tcfg.ScoringStrategy.Type,
+		preemptionMode:      *tcfg.PreemptionMode,
 	}
 
 	return topologyMatch, nil

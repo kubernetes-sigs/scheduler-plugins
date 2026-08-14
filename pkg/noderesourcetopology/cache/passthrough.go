@@ -21,6 +21,7 @@ import (
 
 	"github.com/go-logr/logr"
 	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
+	"github.com/k8stopologyawareschedwg/numaplacement"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -49,6 +50,11 @@ func (pt Passthrough) GetCachedNRTCopy(ctx context.Context, nodeName string, _ *
 		return nil, info
 	}
 	return nrt, info
+}
+
+func (pt Passthrough) GetCachedNUMAPlacementInfo(nodeName string) *numaplacement.EncodedInfo {
+	// TODO: implement this to support the preemption feature for this cache
+	return nil
 }
 
 func (pt Passthrough) NodeMaybeOverReserved(nodeName string, pod *corev1.Pod)  {}

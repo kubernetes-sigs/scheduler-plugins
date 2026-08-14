@@ -24,13 +24,16 @@ import (
 
 	"github.com/go-logr/logr"
 	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
+	"github.com/k8stopologyawareschedwg/numaplacement"
 	"github.com/k8stopologyawareschedwg/podfingerprint"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	podlisterv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/klog/v2"
+	v1qos "k8s.io/kubernetes/pkg/apis/core/v1/helper/qos"
 
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -39,6 +42,7 @@ import (
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/podprovider"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/resourcerequests"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/stringify"
+	"sigs.k8s.io/scheduler-plugins/pkg/util"
 )
 
 type OverReserve struct {
@@ -58,9 +62,18 @@ type OverReserve struct {
 	resyncMethod           apiconfig.CacheResyncMethod
 	resyncScope            apiconfig.CacheResyncScope
 	isPodRelevant          podprovider.PodFilterFunc
+	preemptionMode         apiconfig.PreemptionMode
 }
 
-func NewOverReserve(ctx context.Context, lh logr.Logger, cfg *apiconfig.NodeResourceTopologyCache, client ctrlclient.WithWatch, podLister podlisterv1.PodLister, isPodRelevant podprovider.PodFilterFunc) (*OverReserve, error) {
+func NewOverReserve(
+	ctx context.Context,
+	lh logr.Logger,
+	cfg *apiconfig.NodeResourceTopologyCache,
+	client ctrlclient.WithWatch,
+	podLister podlisterv1.PodLister,
+	isPodRelevant podprovider.PodFilterFunc,
+	preemptionMode apiconfig.PreemptionMode,
+) (*OverReserve, error) {
 	if client == nil || podLister == nil {
 		return nil, fmt.Errorf("received nil references")
 	}
@@ -86,6 +99,7 @@ func NewOverReserve(ctx context.Context, lh logr.Logger, cfg *apiconfig.NodeReso
 		podLister:              podLister,
 		resyncMethod:           resyncMethod,
 		isPodRelevant:          isPodRelevant,
+		preemptionMode:         preemptionMode,
 	}
 
 	if resyncScope == apiconfig.CacheResyncScopeAll {
@@ -126,6 +140,12 @@ func (ov *OverReserve) GetCachedNRTCopy(ctx context.Context, nodeName string, po
 
 	lh.V(5).Info("NRT", "withassumed", stringify.NodeResourceTopologyResources(nrt))
 	return nrt, info
+}
+
+func (ov *OverReserve) GetCachedNUMAPlacementInfo(nodeName string) *numaplacement.EncodedInfo {
+	ov.lock.Lock()
+	defer ov.lock.Unlock()
+	return ov.nrts.GetNUMAPlacementInfoByNodeName(nodeName)
 }
 
 func (ov *OverReserve) NodeMaybeOverReserved(nodeName string, pod *corev1.Pod) {
@@ -275,11 +295,11 @@ func (ov *OverReserve) Resync() {
 	ov.FlushNodes(lh_, nrtUpdates...)
 }
 
-func (ov *OverReserve) MakeNRTUpdatesForNodes(ctx context.Context, lh_ logr.Logger, nodes DesyncedNodes) []*topologyv1alpha2.NodeResourceTopology {
-	var nrtUpdates []*topologyv1alpha2.NodeResourceTopology
+func (ov *OverReserve) MakeNRTUpdatesForNodes(ctx context.Context, lh_ logr.Logger, nodes DesyncedNodes) []nrtUpdate {
+	var nrtUpdates []nrtUpdate
 
 	// node -> pod identifier (namespace, name)
-	nodeToObjsMap, err := makeNodeToPodDataMap(lh_, ov.podLister, ov.isPodRelevant, ov.nrtResNames.Get)
+	nodeToObjsMap, err := makeNodeToPodDataMap(lh_, ov.podLister, ov.isPodRelevant, ov.nrtResNames.Get, ov.preemptionMode)
 	if err != nil {
 		lh_.Error(err, "cannot find the mapping between running pods and nodes")
 		return nrtUpdates
@@ -326,7 +346,13 @@ func (ov *OverReserve) MakeNRTUpdatesForNodes(ctx context.Context, lh_ logr.Logg
 		}
 
 		lh.V(4).Info("overriding cached info", "reason", "resynced")
-		nrtUpdates = append(nrtUpdates, nrtCandidate)
+		nrtUpdate := nrtUpdate{
+			nrt: nrtCandidate,
+		}
+		if ov.preemptionMode == apiconfig.PreemptionEnabled {
+			nrtUpdate.pods = objs
+		}
+		nrtUpdates = append(nrtUpdates, nrtUpdate)
 	}
 
 	for _, nodeName := range nodes.ConfigChanged {
@@ -343,29 +369,35 @@ func (ov *OverReserve) MakeNRTUpdatesForNodes(ctx context.Context, lh_ logr.Logg
 		}
 
 		lh.V(4).Info("overriding cached info", "reason", "configChanged")
-		nrtUpdates = append(nrtUpdates, nrtCandidate)
+		nrtUpdate := nrtUpdate{
+			nrt: nrtCandidate,
+		}
+		if ov.preemptionMode == apiconfig.PreemptionEnabled {
+			nrtUpdate.pods = nodeToObjsMap[nodeName]
+		}
+		nrtUpdates = append(nrtUpdates, nrtUpdate)
 	}
 
 	return nrtUpdates
 }
 
 // FlushNodes drops all the cached information about a given node, resetting its state clean.
-func (ov *OverReserve) FlushNodes(lh logr.Logger, nrts ...*topologyv1alpha2.NodeResourceTopology) uint64 {
+func (ov *OverReserve) FlushNodes(lh logr.Logger, nrtUpdates ...nrtUpdate) uint64 {
 	ov.lock.Lock()
 	defer ov.lock.Unlock()
 
-	for _, nrt := range nrts {
-		lh.V(2).Info("flushing", logging.KeyNode, nrt.Name)
-		ov.nrts.Update(nrt)
-		ov.nrtResNames.Update(nrt)
-		delete(ov.assumedResources, nrt.Name)
-		ov.nodesMaybeOverreserved.Delete(nrt.Name)
-		ov.nodesWithForeignPods.Delete(nrt.Name)
-		ov.nodesWithAttrUpdate.Delete(nrt.Name)
+	if len(nrtUpdates) == 0 {
+		return ov.generation
 	}
 
-	if len(nrts) == 0 {
-		return ov.generation
+	for _, nrtUpdate := range nrtUpdates {
+		lh.V(2).Info("flushing", logging.KeyNode, nrtUpdate.nrt.Name)
+		ov.nrts.Update(nrtUpdate)
+		ov.nrtResNames.Update(nrtUpdate.nrt)
+		delete(ov.assumedResources, nrtUpdate.nrt.Name)
+		ov.nodesMaybeOverreserved.Delete(nrtUpdate.nrt.Name)
+		ov.nodesWithForeignPods.Delete(nrtUpdate.nrt.Name)
+		ov.nodesWithAttrUpdate.Delete(nrtUpdate.nrt.Name)
 	}
 
 	// increase only if we mutated the internal state
@@ -379,10 +411,53 @@ func (ov *OverReserve) FlushNodes(lh logr.Logger, nrts ...*topologyv1alpha2.Node
 func (ov *OverReserve) TestOnlyUpdateNRT(nrt *topologyv1alpha2.NodeResourceTopology) {
 	ov.lock.Lock()
 	defer ov.lock.Unlock()
-	ov.nrts.Update(nrt)
+	ov.nrts.Update(nrtUpdate{
+		nrt: nrt,
+	})
 }
 
-func makeNodeToPodDataMap(lh logr.Logger, podLister podlisterv1.PodLister, isPodRelevant podprovider.PodFilterFunc, nrtResourcesLookup NRTResourcesLookupFunc) (map[string][]podData, error) {
+func categorizePod(pod *corev1.Pod, nrtResources sets.Set[corev1.ResourceName]) podData {
+	pd := podData{
+		Namespace: pod.Namespace,
+		Name:      pod.Name,
+	}
+	if resourcerequests.AreExclusiveForPod(pod, nrtResources) {
+		pd.ExclusiveResources = ExclusiveResourceAlloc
+	} else {
+		pd.ExclusiveResources = ExclusiveResourceNone
+	}
+	return pd
+}
+
+func categorizePodForPreemption(pod *corev1.Pod, nrtResources sets.Set[corev1.ResourceName]) podData {
+	qos := v1qos.GetPodQOS(pod)
+	ret := podData{
+		Namespace: pod.Namespace,
+		Name:      pod.Name,
+	}
+
+	for _, ctr := range pod.Spec.InitContainers {
+		// filter out init containers with restart policy other than Always because these are *supposed* to
+		// run fast and finish, hence not consuming exclusive resources in a steady state while the pod is Running.
+		if !util.IsSidecarInitContainer(&ctr) {
+			continue
+		}
+		if !resourcerequests.IsExclusiveForContainer(qos, ctr, nrtResources) {
+			continue
+		}
+		ret.PinnedContainers = append(ret.PinnedContainers, ctr.Name)
+	}
+
+	for _, ctr := range pod.Spec.Containers {
+		if !resourcerequests.IsExclusiveForContainer(qos, ctr, nrtResources) {
+			continue
+		}
+		ret.PinnedContainers = append(ret.PinnedContainers, ctr.Name)
+	}
+	return ret
+}
+
+func makeNodeToPodDataMap(lh logr.Logger, podLister podlisterv1.PodLister, isPodRelevant podprovider.PodFilterFunc, nrtResourcesLookup NRTResourcesLookupFunc, preemptionMode apiconfig.PreemptionMode) (map[string][]podData, error) {
 	nodeToObjsMap := make(map[string][]podData)
 	pods, err := podLister.List(labels.Everything())
 	if err != nil {
@@ -394,11 +469,13 @@ func makeNodeToPodDataMap(lh logr.Logger, podLister podlisterv1.PodLister, isPod
 		}
 		nrtResources := nrtResourcesLookup(pod.Spec.NodeName)
 		nodeObjs := nodeToObjsMap[pod.Spec.NodeName]
-		nodeObjs = append(nodeObjs, podData{
-			Namespace:             pod.Namespace,
-			Name:                  pod.Name,
-			HasExclusiveResources: resourcerequests.AreExclusiveForPod(pod, nrtResources),
-		})
+		var pd podData
+		if preemptionMode == apiconfig.PreemptionEnabled {
+			pd = categorizePodForPreemption(pod, nrtResources)
+		} else {
+			pd = categorizePod(pod, nrtResources)
+		}
+		nodeObjs = append(nodeObjs, pd)
 		nodeToObjsMap[pod.Spec.NodeName] = nodeObjs
 	}
 	return nodeToObjsMap, nil

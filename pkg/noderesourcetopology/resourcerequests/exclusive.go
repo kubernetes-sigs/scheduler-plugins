@@ -44,28 +44,32 @@ func IncludeNonNative(pod *corev1.Pod) bool {
 }
 
 // AreExclusiveForPod checks if the given pod's containers are consuming exclusive resources
-// in the steady state of the pod, i.e. after the irrestartable init containers have finished running.
+// in the steady state of the pod, i.e. after the non-restartable init containers have finished running.
 func AreExclusiveForPod(pod *corev1.Pod, nrtResources sets.Set[corev1.ResourceName]) bool {
 	qos := v1qos.GetPodQOS(pod)
 
-	// filter out init containers with restart policy other than Always because these are *supposed* to
-	// run fast and finish, hence not consuming exclusive resources in a steady state while the pod is Running.
-	restartableInitCnts := []corev1.Container{}
 	for _, ctr := range pod.Spec.InitContainers {
+		// skip init containers with restart policy other than Always because these are *supposed* to
+		// run fast and finish, hence not consuming exclusive resources in a steady state while the pod is Running.
 		if !util.IsSidecarInitContainer(&ctr) {
 			continue
 		}
-		restartableInitCnts = append(restartableInitCnts, ctr)
+		if IsExclusiveForContainer(qos, ctr, nrtResources) {
+			return true
+		}
 	}
-	return areExclusiveForAnyContainer(qos, append(restartableInitCnts, pod.Spec.Containers...), nrtResources)
+	for _, ctr := range pod.Spec.Containers {
+		if IsExclusiveForContainer(qos, ctr, nrtResources) {
+			return true
+		}
+	}
+	return false
 }
 
-func areExclusiveForAnyContainer(qos corev1.PodQOSClass, containers []corev1.Container, nrtResources sets.Set[corev1.ResourceName]) bool {
-	for _, ctr := range containers {
-		for resource, quantity := range ctr.Resources.Requests {
-			if ok := IsExclusive(qos, resource, quantity, nrtResources); ok {
-				return true
-			}
+func IsExclusiveForContainer(qos corev1.PodQOSClass, container corev1.Container, nrtResources sets.Set[corev1.ResourceName]) bool {
+	for resource, quantity := range container.Resources.Requests {
+		if ok := IsExclusive(qos, resource, quantity, nrtResources); ok {
+			return true
 		}
 	}
 	return false

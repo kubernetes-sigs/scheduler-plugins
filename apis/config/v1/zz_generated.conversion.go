@@ -410,6 +410,7 @@ func autoConvert_v1_NodeResourceTopologyMatchArgs_To_config_NodeResourceTopology
 	}
 	out.DiscardReservedNodes = in.DiscardReservedNodes
 	out.Cache = (*config.NodeResourceTopologyCache)(unsafe.Pointer(in.Cache))
+	out.PreemptionMode = (*config.PreemptionMode)(unsafe.Pointer(in.PreemptionMode))
 	return nil
 }
 
@@ -420,6 +421,7 @@ func autoConvert_config_NodeResourceTopologyMatchArgs_To_v1_NodeResourceTopology
 	}
 	out.DiscardReservedNodes = in.DiscardReservedNodes
 	out.Cache = (*NodeResourceTopologyCache)(unsafe.Pointer(in.Cache))
+	out.PreemptionMode = (*PreemptionMode)(unsafe.Pointer(in.PreemptionMode))
 	return nil
 }
 

@@ -62,7 +62,7 @@ func initNodeTopologyInformer(ctx context.Context, lh logr.Logger,
 
 	podSharedInformer, podLister, isPodRelevant := podprovider.NewFromHandle(lh, handle, tcfg.Cache)
 
-	nrtCache, err := nrtcache.NewOverReserve(ctx, lh.WithName(logging.SubsystemNRTCache), tcfg.Cache, client, podLister, isPodRelevant)
+	nrtCache, err := nrtcache.NewOverReserve(ctx, lh.WithName(logging.SubsystemNRTCache), tcfg.Cache, client, podLister, isPodRelevant, *tcfg.PreemptionMode)
 	if err != nil {
 		return nil, err
 	}
@@ -181,4 +181,13 @@ func getForeignPodsDetectMode(lh logr.Logger, cfg *apiconfig.NodeResourceTopolog
 		lh.Info("foreign pods detection value missing", "fallback", foreignPodsDetect)
 	}
 	return foreignPodsDetect
+}
+
+func getPreemptionMode(lh logr.Logger, tcfg *apiconfig.NodeResourceTopologyMatchArgs) apiconfig.PreemptionMode {
+	if tcfg.PreemptionMode != nil {
+		return *tcfg.PreemptionMode
+	}
+	preemptionMode := apiconfig.PreemptionDisabled
+	lh.Info("preemption mode missing", "fallback", preemptionMode)
+	return preemptionMode
 }
