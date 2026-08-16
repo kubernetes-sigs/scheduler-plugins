@@ -418,8 +418,8 @@ func TestNodeResourceTopology(t *testing.T) {
 		{
 			name: "Burstable QoS, pod fit",
 			pod: makePodByResourceList(&v1.ResourceList{
-				v1.ResourceCPU:  *resource.NewQuantity(4, resource.DecimalSI),
-				nicResourceName: *resource.NewQuantity(3, resource.DecimalSI)}),
+				v1.ResourceCPU: *resource.NewQuantity(4, resource.DecimalSI),
+			}),
 			node:       nodes[1],
 			wantStatus: nil,
 		},
