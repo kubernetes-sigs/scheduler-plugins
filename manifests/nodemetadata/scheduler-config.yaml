@@ -1,0 +1,76 @@
+apiVersion: kubescheduler.config.k8s.io/v1
+kind: KubeSchedulerConfiguration
+profiles:
+  - schedulerName: default-scheduler
+    plugins:
+      score:
+        enabled:
+          - name: NodeMetadata
+            weight: 5  # Adjust weight to balance with other scoring plugins
+    pluginConfig:
+      - name: NodeMetadata
+        args:
+          # Example 1: Score by numeric label (higher priority nodes preferred)
+          metadataKey: "node.example.com/priority"
+          metadataSource: "Label"
+          metadataType: "Number"
+          scoringStrategy: "Highest"
+
+---
+apiVersion: kubescheduler.config.k8s.io/v1
+kind: KubeSchedulerConfiguration
+profiles:
+  - schedulerName: cost-aware-scheduler
+    plugins:
+      score:
+        enabled:
+          - name: NodeMetadata
+            weight: 10
+    pluginConfig:
+      - name: NodeMetadata
+        args:
+          # Example 2: Score by cost (lower cost nodes preferred)
+          metadataKey: "node.example.com/hourly-cost"
+          metadataSource: "Annotation"
+          metadataType: "Number"
+          scoringStrategy: "Lowest"
+
+---
+apiVersion: kubescheduler.config.k8s.io/v1
+kind: KubeSchedulerConfiguration
+profiles:
+  - schedulerName: freshness-aware-scheduler
+    plugins:
+      score:
+        enabled:
+          - name: NodeMetadata
+            weight: 3
+    pluginConfig:
+      - name: NodeMetadata
+        args:
+          # Example 3: Score by timestamp (newer nodes preferred)
+          metadataKey: "node.example.com/last-maintenance"
+          metadataSource: "Annotation"
+          metadataType: "Timestamp"
+          scoringStrategy: "Newest"
+          timestampFormat: "2006-01-02T15:04:05Z07:00"  # RFC3339
+
+---
+apiVersion: kubescheduler.config.k8s.io/v1
+kind: KubeSchedulerConfiguration
+profiles:
+  - schedulerName: stable-nodes-scheduler
+    plugins:
+      score:
+        enabled:
+          - name: NodeMetadata
+            weight: 2
+    pluginConfig:
+      - name: NodeMetadata
+        args:
+          # Example 4: Score by node age (older nodes preferred for stability)
+          metadataKey: "node.example.com/created-at"
+          metadataSource: "Label"
+          metadataType: "Timestamp"
+          scoringStrategy: "Oldest"
+          timestampFormat: "2006-01-02"
