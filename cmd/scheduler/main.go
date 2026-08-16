@@ -34,6 +34,7 @@ import (
 	"sigs.k8s.io/scheduler-plugins/pkg/podstate"
 	"sigs.k8s.io/scheduler-plugins/pkg/preemptiontoleration"
 	"sigs.k8s.io/scheduler-plugins/pkg/qos"
+	"sigs.k8s.io/scheduler-plugins/pkg/snapshottopology"
 	"sigs.k8s.io/scheduler-plugins/pkg/sysched"
 	"sigs.k8s.io/scheduler-plugins/pkg/trimaran/loadvariationriskbalancing"
 	"sigs.k8s.io/scheduler-plugins/pkg/trimaran/lowriskovercommitment"
@@ -57,6 +58,7 @@ func main() {
 		app.WithPlugin(nodemetadata.Name, nodemetadata.New),
 		app.WithPlugin(noderesources.AllocatableName, noderesources.NewAllocatable),
 		app.WithPlugin(noderesourcetopology.Name, noderesourcetopology.New),
+		app.WithPlugin(snapshottopology.Name, snapshottopology.New),
 		app.WithPlugin(preemptiontoleration.Name, preemptiontoleration.New),
 		app.WithPlugin(targetloadpacking.Name, targetloadpacking.New),
 		app.WithPlugin(lowriskovercommitment.Name, lowriskovercommitment.New),
