@@ -213,6 +213,17 @@ const (
 	PreemptionEnabled PreemptionMode = "Enabled"
 )
 
+// TopologyDataPolicy is a "string" type.
+type TopologyDataPolicy string
+
+const (
+	// TopologyDataPolicyAllow lets nodes without NRT data pass the topology filter.
+	// This matches the default behavior of the NodeTopologyMatch plugin since its inception.
+	TopologyDataPolicyAllow TopologyDataPolicy = "allow"
+	// TopologyDataPolicyReject filters out nodes without NRT data as Unschedulable.
+	TopologyDataPolicyReject TopologyDataPolicy = "reject"
+)
+
 // NodeResourceTopologyCache define configuration details for the NodeResourceTopology cache.
 type NodeResourceTopologyCache struct {
 	// ForeignPodsDetect sets how foreign pods should be handled.
@@ -261,6 +272,9 @@ type NodeResourceTopologyMatchArgs struct {
 	// PreemptionMode controls the preemption mode of the plugin. Must be explicitly set to
 	// "Enabled" to opt in. Defaults to "Disabled".
 	PreemptionMode *PreemptionMode
+	// MissingTopologyDataPolicy controls how the filter handles nodes without NRT data.
+	// "allow" (default, backward compatibility) lets them pass; "reject" filters them out.
+	MissingTopologyDataPolicy *TopologyDataPolicy
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
