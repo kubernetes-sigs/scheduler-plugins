@@ -222,7 +222,9 @@ func (pgMgr *PodGroupManager) ActivateSiblings(ctx context.Context, pod *corev1.
 		}
 	}
 
-	if len(pods) != 0 {
+	if len(pods) == 0 {
+		lh.V(4).Info("ActivateSiblings found no other pods to activate", "pod", klog.KObj(pod), "podGroup", pgName)
+	} else {
 		if c, err := state.Read(framework.PodsToActivateKey); err == nil {
 			if s, ok := c.(*framework.PodsToActivate); ok {
 				s.Lock()
@@ -231,6 +233,7 @@ func (pgMgr *PodGroupManager) ActivateSiblings(ctx context.Context, pod *corev1.
 					s.Map[namespacedName] = pod
 				}
 				s.Unlock()
+				lh.V(3).Info("ActivateSiblings requested activation for sibling pods", "pod", klog.KObj(pod), "podGroup", pgName, "activated", len(pods))
 			}
 		}
 	}
@@ -329,17 +332,9 @@ func (pgMgr *PodGroupManager) Permit(ctx context.Context, state fwk.CycleState, 
 		return Success
 	}
 
-	if len(assigned) == 1 {
-		// Given we've reached Permit(), it's mean all PreFilter checks (minMember & minResource)
-		// already pass through, so if len(assigned) == 1, it could be due to:
-		// - minResource get satisfied
-		// - new pods added
-		// In either case, we should and only should use this 0-th pod to trigger activating
-		// its siblings.
-		// It'd be in-efficient if we trigger activating siblings unconditionally.
-		// See https://github.com/kubernetes-sigs/scheduler-plugins/issues/682
-		state.Write(permitStateKey, &PermitState{Activate: true})
-	}
+	// Request sibling activation on every pod that reaches this point, not just the
+	// first one to join `assigned`. This is meant to avoid wakeup races.
+	state.Write(permitStateKey, &PermitState{Activate: true})
 
 	return Wait
 }
