@@ -1,0 +1,229 @@
+/*
+Copyright 2024 The Kubernetes Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package cache
+
+import (
+	"testing"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/watch"
+
+	"github.com/go-logr/logr/testr"
+
+	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
+
+	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/nodeconfig"
+)
+
+func TestWatcherFiltersEvents(t *testing.T) {
+	ch := make(chan NRTEvent, 10)
+	wt := Watcher{
+		lh:       testr.New(t),
+		eventCh:  ch,
+		lastConf: make(map[string]nodeconfig.TopologyManager),
+		pending:  make(map[string]pendingNRTEvent),
+	}
+
+	tcases := []struct {
+		description string
+		ev          watch.Event
+		forwarded   bool
+	}{
+		{
+			description: "deleted event ignored",
+			ev: watch.Event{
+				Type: watch.Deleted,
+				Object: &topologyv1alpha2.NodeResourceTopology{
+					ObjectMeta: metav1.ObjectMeta{Name: "node-7"},
+				},
+			},
+			forwarded: false,
+		},
+		{
+			description: "added event forwarded",
+			ev: watch.Event{
+				Type: watch.Added,
+				Object: &topologyv1alpha2.NodeResourceTopology{
+					ObjectMeta: metav1.ObjectMeta{Name: "node-0"},
+					Attributes: []topologyv1alpha2.AttributeInfo{
+						{Name: "topologyManagerScope", Value: "container"},
+						{Name: "topologyManagerPolicy", Value: "single-numa-node"},
+					},
+				},
+			},
+			forwarded: true,
+		},
+		{
+			description: "modified event for known node no attr change",
+			ev: watch.Event{
+				Type: watch.Modified,
+				Object: &topologyv1alpha2.NodeResourceTopology{
+					ObjectMeta: metav1.ObjectMeta{Name: "node-0"},
+					Attributes: []topologyv1alpha2.AttributeInfo{
+						{Name: "topologyManagerScope", Value: "container"},
+						{Name: "topologyManagerPolicy", Value: "single-numa-node"},
+					},
+				},
+			},
+			forwarded: false,
+		},
+		{
+			description: "modified event for known node with attr change",
+			ev: watch.Event{
+				Type: watch.Modified,
+				Object: &topologyv1alpha2.NodeResourceTopology{
+					ObjectMeta: metav1.ObjectMeta{Name: "node-0"},
+					Attributes: []topologyv1alpha2.AttributeInfo{
+						{Name: "topologyManagerScope", Value: "pod"},
+						{Name: "topologyManagerPolicy", Value: "single-numa-node"},
+					},
+				},
+			},
+			forwarded: true,
+		},
+		{
+			description: "modified event for unknown node",
+			ev: watch.Event{
+				Type: watch.Modified,
+				Object: &topologyv1alpha2.NodeResourceTopology{
+					ObjectMeta: metav1.ObjectMeta{Name: "new-node"},
+					Attributes: []topologyv1alpha2.AttributeInfo{
+						{Name: "topologyManagerScope", Value: "container"},
+						{Name: "topologyManagerPolicy", Value: "single-numa-node"},
+					},
+				},
+			},
+			forwarded: true,
+		},
+	}
+
+	for _, tcase := range tcases {
+		t.Run(tcase.description, func(t *testing.T) {
+			before := len(ch)
+			wt.processEvent(tcase.ev)
+			after := len(ch)
+			if tcase.forwarded && after != before+1 {
+				t.Errorf("event should have been forwarded")
+			}
+			if !tcase.forwarded && after != before {
+				t.Errorf("event should NOT have been forwarded")
+			}
+		})
+	}
+}
+
+func TestWatcherOverflowSelfHealing(t *testing.T) {
+	// Channel capacity 1: a second send will overflow.
+	ch := make(chan NRTEvent, 1)
+	wt := Watcher{
+		lh:       testr.New(t),
+		eventCh:  ch,
+		lastConf: make(map[string]nodeconfig.TopologyManager),
+		pending:  make(map[string]pendingNRTEvent),
+	}
+
+	addedEvent := watch.Event{
+		Type: watch.Added,
+		Object: &topologyv1alpha2.NodeResourceTopology{
+			ObjectMeta: metav1.ObjectMeta{Name: "node-full"},
+			Attributes: []topologyv1alpha2.AttributeInfo{
+				{Name: "topologyManagerScope", Value: "container"},
+				{Name: "topologyManagerPolicy", Value: "single-numa-node"},
+			},
+		},
+	}
+
+	// First send succeeds and fills the channel.
+	wt.processEvent(addedEvent)
+	if len(ch) != 1 {
+		t.Fatalf("first event should have been forwarded, channel len=%d", len(ch))
+	}
+
+	// Simulate a second Added event for a different node while the channel is
+	// still full. This must overflow: the change is not delivered but it is
+	// parked in pending, and lastConf is NOT advanced until delivery (lazy).
+	overflowEvent := watch.Event{
+		Type: watch.Added,
+		Object: &topologyv1alpha2.NodeResourceTopology{
+			ObjectMeta: metav1.ObjectMeta{Name: "node-overflow"},
+			Attributes: []topologyv1alpha2.AttributeInfo{
+				{Name: "topologyManagerScope", Value: "container"},
+				{Name: "topologyManagerPolicy", Value: "single-numa-node"},
+			},
+		},
+	}
+	wt.processEvent(overflowEvent)
+	if len(ch) != 1 {
+		t.Fatalf("channel should still have 1 item (overflow parked), got %d", len(ch))
+	}
+
+	_, hasConf, hasPending := wt.TestOnlyNodeStatus("node-overflow")
+	if !hasPending {
+		t.Fatalf("pending should contain node-overflow after a dropped send")
+	}
+	if hasConf {
+		t.Fatalf("lastConf should NOT contain node-overflow until the parked change is delivered")
+	}
+
+	// Drain the channel to make room.
+	<-ch
+
+	// flushPending must self-heal by retrying the parked change, without needing
+	// any further watch event for the node.
+	wt.flushPending()
+	if len(ch) != 1 {
+		t.Fatalf("parked change should have been retried after draining, channel len=%d", len(ch))
+	}
+	_, hasConf, hasPending = wt.TestOnlyNodeStatus("node-overflow")
+	if hasPending {
+		t.Fatalf("pending should be empty after a successful retry")
+	}
+	if !hasConf {
+		t.Fatalf("lastConf should contain node-overflow after the parked change is delivered")
+	}
+
+	ev := <-ch
+	if ev.NodeName != "node-overflow" {
+		t.Fatalf("unexpected retried event node name: %q", ev.NodeName)
+	}
+}
+
+func TestDrainNRTEvents(t *testing.T) {
+	lh := testr.New(t)
+	ch := make(chan NRTEvent, 10)
+	ov := &OverReserve{
+		lh:                  lh,
+		nodesWithAttrUpdate: newCounter(),
+		nrtUpdateCh:         ch,
+	}
+
+	// Send two node names
+	ch <- NRTEvent{Reason: WatchReasonAttrChanged, NodeName: "worker-0"}
+	ch <- NRTEvent{Reason: WatchReasonAttrChanged, NodeName: "worker-1"}
+
+	ov.drainNRTEvents(lh)
+
+	if !ov.nodesWithAttrUpdate.IsSet("worker-0") {
+		t.Errorf("worker-0 should be queued")
+	}
+	if !ov.nodesWithAttrUpdate.IsSet("worker-1") {
+		t.Errorf("worker-1 should be queued")
+	}
+
+	// Draining again with empty channel should be a no-op
+	ov.drainNRTEvents(lh)
+}

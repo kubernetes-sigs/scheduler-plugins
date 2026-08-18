@@ -21,6 +21,7 @@ import (
 	"reflect"
 	"sort"
 	"testing"
+	"time"
 
 	"github.com/go-logr/logr/testr"
 	"github.com/google/go-cmp/cmp"
@@ -705,7 +706,12 @@ func isNRTEqual(a, b *topologyv1alpha2.NodeResourceTopology) bool {
 }
 
 func TestResyncFingerprintMismatchKeepsNodeDirty(t *testing.T) {
-	fakeClient, err := tu.NewFakeClient()
+	// Create the NRT in the fake client at init time so the watcher
+	// (started by mustOverReserve) sees it already in the store and
+	// does not queue an Added event that would race with our test.
+	initialNRT := makeTestNRT("node1")
+	objs := []runtime.Object{initialNRT}
+	fakeClient, err := tu.NewFakeClient(objs...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -748,45 +754,26 @@ func TestResyncFingerprintMismatchKeepsNodeDirty(t *testing.T) {
 	// simulate some time after the node is marked overreserved
 	nrtCache.NodeMaybeOverReserved("node1", &corev1.Pod{})
 
-	// NRT on the API server has a fingerprint that does NOT match the pods
-	// in the lister. This forces a ErrSignatureMismatch in Resync().
-	nrtWithBadFingerprint := &topologyv1alpha2.NodeResourceTopology{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "node1",
-		},
-		Attributes: topologyv1alpha2.AttributeList{
-			{
-				Name:  podfingerprint.Attribute,
-				Value: "pfp0vFFFFdeadbeef000000",
-			},
-		},
-		TopologyPolicies: []string{string(topologyv1alpha2.SingleNUMANodeContainerLevel)},
-		Zones: topologyv1alpha2.ZoneList{
-			{
-				Name: "node-0",
-				Type: "Node",
-				Resources: topologyv1alpha2.ResourceInfoList{
-					MakeTopologyResInfo(cpu, "32", "30"),
-					MakeTopologyResInfo(memory, "64Gi", "60Gi"),
-					MakeTopologyResInfo(nicResourceName, "16", "16"),
-				},
-			},
-			{
-				Name: "node-1",
-				Type: "Node",
-				Resources: topologyv1alpha2.ResourceInfoList{
-					MakeTopologyResInfo(cpu, "32", "22"),
-					MakeTopologyResInfo(memory, "64Gi", "44Gi"),
-					MakeTopologyResInfo(nicResourceName, "16", "16"),
-				},
-			},
-		},
+	// Update the NRT on the API server with a fingerprint that does NOT
+	// match the pods in the lister. This forces a fingerprint check
+	// failure in Resync(). Using Update (not Create) so the watcher
+	// sees a Modified event; since the TopologyManager config is unchanged,
+	// areAttrsChanged returns false and no ConfigChanged signal is queued.
+	nrtWithBadFingerprint := initialNRT.DeepCopy()
+	nrtWithBadFingerprint.Annotations = map[string]string{
+		podfingerprint.Annotation: "pfp0vFFFFdeadbeef000000",
 	}
+	nrtWithBadFingerprint.Attributes = append(nrtWithBadFingerprint.Attributes,
+		topologyv1alpha2.AttributeInfo{
+			Name:  podfingerprint.Attribute,
+			Value: "pfp0vFFFFdeadbeef000000",
+		},
+	)
 
 	runningPod := testPod.DeepCopy()
 	runningPod.Status.Phase = corev1.PodRunning
 
-	if err := fakeClient.Create(context.Background(), nrtWithBadFingerprint); err != nil {
+	if err := fakeClient.Update(context.Background(), nrtWithBadFingerprint); err != nil {
 		t.Fatal(err)
 	}
 	fakePodLister.AddPod(runningPod)
@@ -845,7 +832,7 @@ func TestResyncReserveInterleaved(t *testing.T) {
 
 	// NRT on the API server has a fingerprint that does NOT match
 	// the pods in the lister, forcing a fingerprint mismatch in
-	// MakeNRTUpdatesForNodes (resync cannot flush).
+	// MakeNRTUpdates (resync cannot flush).
 	nrtWithBadFingerprint := &topologyv1alpha2.NodeResourceTopology{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "node1",
@@ -887,18 +874,17 @@ func TestResyncReserveInterleaved(t *testing.T) {
 	}
 	fakePodLister.AddPod(runningPod)
 
-	// Step 2: Resync begins — get dirty nodes, then compute NRT updates.
+	// Step 2: Resync begins: get dirty nodes, then compute NRT updates.
 	// The fingerprint mismatch means nrtUpdates will be empty for node1.
 	lh := testr.New(t)
 	nodes := nrtCache.GetDesyncedNodes(lh)
-	nrtUpdates := nrtCache.MakeNRTUpdatesForNodes(ctx, lh, nodes)
+	nrtUpdates := nrtCache.MakeNRTUpdates(ctx, lh, nodes)
 
 	if len(nrtUpdates) != 0 {
 		t.Fatalf("expected no NRT updates due to fingerprint mismatch, got %d", len(nrtUpdates))
 	}
 
-	// Step 3: concurrent Reserve() arrives between MakeNRTUpdatesForNodes
-	// and FlushNodes — the exact window where the race occurred.
+	// Step 3: concurrent Reserve() arrives between MakeNRTUpdatesForNodes and FlushNodes
 	concurrentPod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "pod2",
@@ -924,11 +910,11 @@ func TestResyncReserveInterleaved(t *testing.T) {
 	}
 	nrtCache.ReserveNodeResources("node1", concurrentPod)
 
-	// Step 4: Resync finishes — FlushNodes with the (empty) update list.
+	// Step 4: FlushNodes with the (empty) update list.
 	nrtCache.FlushNodes(lh, nrtUpdates...)
 
-	// Verify: node1 must still be dirty — the resync failed (fingerprint
-	// mismatch) and Reserve must NOT have cleared the dirty bit.
+	// Verify: node1 must still be dirty, because the resync failed (fingerprint mismatch)
+	// and Reserve must NOT have cleared the dirty bit.
 	dirtyNodes := nrtCache.GetDesyncedNodes(lh)
 	if dirtyNodes.DirtyCount() != 1 {
 		t.Errorf("node should stay dirty after failed resync + concurrent reserve, got dirty count: %d", dirtyNodes.DirtyCount())
@@ -1060,7 +1046,40 @@ func mustOverReserve(t *testing.T, client ctrlclient.WithWatch, podLister podlis
 	if err != nil {
 		t.Fatalf("unexpected error creating cache: %v", err)
 	}
+	t.Cleanup(obj.Close)
 	return obj
+}
+
+func TestOverReserveCloseStopsWatcher(t *testing.T) {
+	fakeClient, err := tu.NewFakeClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	nrtCache := mustOverReserve(t, fakeClient, &fakePodLister{})
+
+	if got := nrtCache.TestOnlyWatcherStatus(); got != WatcherStatusRunning {
+		t.Fatalf("expected watcher running before Close(), got %q", got)
+	}
+
+	closed := make(chan struct{})
+	go func() {
+		nrtCache.Close()
+		close(closed)
+	}()
+
+	select {
+	case <-closed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Close() did not return in time; the watcher goroutine likely did not stop")
+	}
+
+	// Close() returning only proves our call unblocked; check the watcher's own
+	// status to confirm its goroutine actually exited, not just that Wait()
+	// happened to return.
+	if got := nrtCache.TestOnlyWatcherStatus(); got != WatcherStatusStopped {
+		t.Fatalf("expected watcher stopped after Close(), got %q", got)
+	}
 }
 
 func TestMakeNodeToPodDataMap(t *testing.T) {
@@ -1571,6 +1590,7 @@ func TestOverresevedGetCachedNRTCopyWithForeignPods(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error creating cache: %v", err)
 	}
+	t.Cleanup(nrtCache.Close)
 
 	expectedNrtInfo := CachedNRTInfo{
 		Generation: 0,

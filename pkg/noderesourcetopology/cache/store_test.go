@@ -638,7 +638,7 @@ func TestNRTStoreLazyDecodeCaching(t *testing.T) {
 		t.Fatal("numaPlacement should be set after first Get")
 	}
 
-	// Second Get must return the same pointer — no re-decode.
+	// Second Get must return the same pointer, no re-decode.
 	second := ns.GetNUMAPlacementInfoByNodeName(nrt.Name)
 	if first != second {
 		t.Fatal("second Get returned a different pointer: caching did not work")
