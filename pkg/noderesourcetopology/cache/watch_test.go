@@ -35,6 +35,7 @@ func TestWatcherFiltersEvents(t *testing.T) {
 		lh:       testr.New(t),
 		eventCh:  ch,
 		lastConf: make(map[string]nodeconfig.TopologyManager),
+		pending:  make(map[string]pendingNRTEvent),
 	}
 
 	tcases := []struct {
@@ -132,6 +133,7 @@ func TestWatcherOverflowSelfHealing(t *testing.T) {
 		lh:       testr.New(t),
 		eventCh:  ch,
 		lastConf: make(map[string]nodeconfig.TopologyManager),
+		pending:  make(map[string]pendingNRTEvent),
 	}
 
 	addedEvent := watch.Event{
@@ -151,9 +153,9 @@ func TestWatcherOverflowSelfHealing(t *testing.T) {
 		t.Fatalf("first event should have been forwarded, channel len=%d", len(ch))
 	}
 
-	// Simulate a second Added event for a different node while the
-	// channel is still full. This must overflow (drop), and the node
-	// must NOT be recorded in lastConf.
+	// Simulate a second Added event for a different node while the channel is
+	// still full. This must overflow: the change is not delivered but it is
+	// parked in pending, and lastConf is NOT advanced until delivery (lazy).
 	overflowEvent := watch.Event{
 		Type: watch.Added,
 		Object: &topologyv1alpha2.NodeResourceTopology{
@@ -166,33 +168,37 @@ func TestWatcherOverflowSelfHealing(t *testing.T) {
 	}
 	wt.processEvent(overflowEvent)
 	if len(ch) != 1 {
-		t.Fatalf("channel should still have 1 item (overflow dropped), got %d", len(ch))
+		t.Fatalf("channel should still have 1 item (overflow parked), got %d", len(ch))
 	}
-	if _, known := wt.lastConf["node-overflow"]; known {
-		t.Fatalf("lastConf should NOT contain node-overflow after a dropped send")
+
+	_, hasConf, hasPending := wt.TestOnlyNodeStatus("node-overflow")
+	if !hasPending {
+		t.Fatalf("pending should contain node-overflow after a dropped send")
+	}
+	if hasConf {
+		t.Fatalf("lastConf should NOT contain node-overflow until the parked change is delivered")
 	}
 
 	// Drain the channel to make room.
 	<-ch
 
-	// Now a Modified event for the same node should retry and succeed,
-	// because lastConf was not updated on the failed send.
-	retryEvent := watch.Event{
-		Type: watch.Modified,
-		Object: &topologyv1alpha2.NodeResourceTopology{
-			ObjectMeta: metav1.ObjectMeta{Name: "node-overflow"},
-			Attributes: []topologyv1alpha2.AttributeInfo{
-				{Name: "topologyManagerScope", Value: "container"},
-				{Name: "topologyManagerPolicy", Value: "single-numa-node"},
-			},
-		},
-	}
-	wt.processEvent(retryEvent)
+	// flushPending must self-heal by retrying the parked change, without needing
+	// any further watch event for the node.
+	wt.flushPending()
 	if len(ch) != 1 {
-		t.Fatalf("retry event should have been forwarded after draining, channel len=%d", len(ch))
+		t.Fatalf("parked change should have been retried after draining, channel len=%d", len(ch))
 	}
-	if _, known := wt.lastConf["node-overflow"]; !known {
-		t.Fatalf("lastConf should contain node-overflow after successful retry")
+	_, hasConf, hasPending = wt.TestOnlyNodeStatus("node-overflow")
+	if hasPending {
+		t.Fatalf("pending should be empty after a successful retry")
+	}
+	if !hasConf {
+		t.Fatalf("lastConf should contain node-overflow after the parked change is delivered")
+	}
+
+	ev := <-ch
+	if ev.NodeName != "node-overflow" {
+		t.Fatalf("unexpected retried event node name: %q", ev.NodeName)
 	}
 }
 

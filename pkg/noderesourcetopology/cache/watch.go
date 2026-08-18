@@ -66,10 +66,36 @@ func (wr WatchReason) String() string {
 // Watcher tracks the TopologyManager attributes change locally to minimize
 // the updates it sends back to the Resync goroutine.
 type Watcher struct {
-	lh       logr.Logger
-	eventCh  chan<- NRTEvent
+	lh      logr.Logger
+	eventCh chan<- NRTEvent
+	// lastConf tracks the last TopologyManager config we successfully *delivered*
+	// per node, used to diff incoming events and minimize the updates we forward.
+	// It is advanced only on a successful send (see trySend/flushPending), so a
+	// change whose send overflowed is not reflected here until it is delivered.
+	// Delivery of overflowed changes is guaranteed by pending draining.
 	lastConf map[string]nodeconfig.TopologyManager
-	done     chan struct{}
+	// pending holds changes which could not be delivered because the channel
+	// was full. These are retried periodically, so a dropped change is
+	// eventually delivered without depending on a further external change.
+	// It is keyed by node name, so there is at most one pending item per node.
+	// Events are level-triggered (they only tell the resync loop to re-read the
+	// node, which fetches the current state), so we can safely overwrite a
+	// parked entry with a later change.
+	// We can wonder why we need a two-layer structure, bounded chan + parked map
+	// vs an unbounded channel. First, we expect the channel to overflow rarely.
+	// Second, with this approach parked events are naturally squashed, so the
+	// total memory consumption is always bounded, differently
+	// from an unbounded channel.
+	pending map[string]pendingNRTEvent
+	done    chan struct{}
+}
+
+// pendingNRTEvent is a change parked for later delivery when the update channel
+// was full. It embeds the ready-to-send NRTEvent and carries the config to advance
+// the last delivered configuration.
+type pendingNRTEvent struct {
+	NRTEvent
+	conf nodeconfig.TopologyManager
 }
 
 func NewWatcher(lh logr.Logger, eventCh chan<- NRTEvent, nrtObjs []topologyv1alpha2.NodeResourceTopology) *Watcher {
@@ -84,6 +110,7 @@ func NewWatcher(lh logr.Logger, eventCh chan<- NRTEvent, nrtObjs []topologyv1alp
 		lh:       lh,
 		eventCh:  eventCh,
 		lastConf: initConf,
+		pending:  make(map[string]pendingNRTEvent),
 		done:     make(chan struct{}),
 	}
 }
@@ -108,6 +135,8 @@ func (wt *Watcher) NodeResourceTopologies(ctx context.Context, client ctrlclient
 		watchResetInterval  = 2 * time.Minute
 		streamResetInterval = 1 * time.Minute
 
+		pendingRetryInterval = 2 * time.Second // determined heuristically, no hard data yet.
+
 		factor = 2.0
 		jitter = 1.0
 	)
@@ -128,6 +157,9 @@ func (wt *Watcher) NodeResourceTopologies(ctx context.Context, client ctrlclient
 		Jitter:   jitter,
 	}.DelayWithReset(clock.RealClock{}, streamResetInterval)
 
+	retryTicker := clock.RealClock{}.NewTicker(pendingRetryInterval)
+	defer retryTicker.Stop()
+
 	for ctx.Err() == nil {
 		wt.lh.Info("start watching NRT objects")
 		nrtObjs := topologyv1alpha2.NodeResourceTopologyList{}
@@ -140,6 +172,7 @@ func (wt *Watcher) NodeResourceTopologies(ctx context.Context, client ctrlclient
 				wt.lh.Info("stop watching NRT objects")
 			}
 		} else {
+			retryCh := retryTicker.C()
 			doneEvents := false
 			for !doneEvents {
 				select {
@@ -155,6 +188,9 @@ func (wt *Watcher) NodeResourceTopologies(ctx context.Context, client ctrlclient
 						continue
 					}
 					wt.processEvent(ev)
+
+				case <-retryCh:
+					wt.flushPending()
 
 				case <-ctx.Done():
 					wt.lh.Info("stop watching NRT objects")
@@ -204,14 +240,46 @@ func (wt *Watcher) processEvent(ev watch.Event) {
 		Reason:   reason,
 		NodeName: nrtObj.Name,
 	}
+	wt.trySend(nrtEv, newConf)
+}
 
+func (wt *Watcher) TestOnlyNodeStatus(nodeName string) (nodeconfig.TopologyManager, bool, bool) {
+	conf, hasConf := wt.lastConf[nodeName]
+	_, hasPending := wt.pending[nodeName]
+	return conf, hasConf, hasPending
+}
+
+// trySend attempts a non-blocking send of ev. On success lastConf is advanced
+// to conf and any parked retry for the node is cleared; on failure the change is
+// parked in wt.pending so flushPending can retry it later without needing a new
+// watch event.
+func (wt *Watcher) trySend(ev NRTEvent, conf nodeconfig.TopologyManager) {
 	select {
-	case wt.eventCh <- nrtEv:
-		// Update lastConf only after a successful send; so, if the channel is
-		// full, the next update will retry automatically another send.
-		wt.lastConf[nrtObj.Name] = newConf
-		wt.lh.V(2).Info("NRT async update", "reason", reason.String(), logging.KeyNode, nrtObj.Name)
+	case wt.eventCh <- ev:
+		// Advance lastConf only after a successful send, so an overflowed change
+		// stays visible as a diff until pending delivers it.
+		wt.lastConf[ev.NodeName] = conf
+		delete(wt.pending, ev.NodeName) // if any
+		wt.lh.V(2).Info("NRT async update", "reason", ev.Reason.String(), logging.KeyNode, ev.NodeName)
 	default:
-		wt.lh.V(2).Info("NRT event channel full, will retry", logging.KeyNode, nrtObj.Name)
+		// update is level-triggered, so overwriting with a later event is safe
+		wt.pending[ev.NodeName] = pendingNRTEvent{NRTEvent: ev, conf: conf}
+		wt.lh.V(2).Info("NRT event channel full, parked for retry", logging.KeyNode, ev.NodeName, "pending", len(wt.pending))
+	}
+}
+
+// flushPending retries delivering parked changes. It runs on the watch
+// goroutine, so it shares no state with the resync loop beyond eventCh. It
+// stops at the first send that would block, leaving the rest for the next tick.
+func (wt *Watcher) flushPending() {
+	for name, pe := range wt.pending {
+		select {
+		case wt.eventCh <- pe.NRTEvent:
+			wt.lastConf[name] = pe.conf
+			delete(wt.pending, name)
+			wt.lh.V(2).Info("NRT async update retried", "reason", pe.Reason.String(), logging.KeyNode, name)
+		default:
+			return
+		}
 	}
 }
