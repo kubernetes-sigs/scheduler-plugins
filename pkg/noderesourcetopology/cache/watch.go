@@ -249,6 +249,34 @@ func (wt *Watcher) TestOnlyNodeStatus(nodeName string) (nodeconfig.TopologyManag
 	return conf, hasConf, hasPending
 }
 
+// WatcherStatus describes the lifecycle state of a Watcher's watch loop.
+type WatcherStatus string
+
+const (
+	// WatcherStatusDisabled means no watch loop was ever started for this
+	// Watcher (e.g. resync scope doesn't require watching NRT objects).
+	WatcherStatusDisabled WatcherStatus = "disabled"
+	// WatcherStatusRunning means the watch loop is still running.
+	WatcherStatusRunning WatcherStatus = "running"
+	// WatcherStatusStopped means the watch loop has exited.
+	WatcherStatusStopped WatcherStatus = "stopped"
+)
+
+// TestOnlyWatcherStatus is safe to call on nil objects. It reports whether
+// the watch loop was ever started, is still running, or has exited.
+// to be used only in tests.
+func (wt *Watcher) TestOnlyWatcherStatus() WatcherStatus {
+	if wt == nil || wt.done == nil {
+		return WatcherStatusDisabled
+	}
+	select {
+	case <-wt.done:
+		return WatcherStatusStopped
+	default:
+		return WatcherStatusRunning
+	}
+}
+
 // trySend attempts a non-blocking send of ev. On success lastConf is advanced
 // to conf and any parked retry for the node is cleared; on failure the change is
 // parked in wt.pending so flushPending can retry it later without needing a new

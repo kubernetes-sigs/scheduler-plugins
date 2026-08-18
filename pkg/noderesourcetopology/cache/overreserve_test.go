@@ -21,6 +21,7 @@ import (
 	"reflect"
 	"sort"
 	"testing"
+	"time"
 
 	"github.com/go-logr/logr/testr"
 	"github.com/google/go-cmp/cmp"
@@ -1047,6 +1048,38 @@ func mustOverReserve(t *testing.T, client ctrlclient.WithWatch, podLister podlis
 	}
 	t.Cleanup(obj.Close)
 	return obj
+}
+
+func TestOverReserveCloseStopsWatcher(t *testing.T) {
+	fakeClient, err := tu.NewFakeClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	nrtCache := mustOverReserve(t, fakeClient, &fakePodLister{})
+
+	if got := nrtCache.TestOnlyWatcherStatus(); got != WatcherStatusRunning {
+		t.Fatalf("expected watcher running before Close(), got %q", got)
+	}
+
+	closed := make(chan struct{})
+	go func() {
+		nrtCache.Close()
+		close(closed)
+	}()
+
+	select {
+	case <-closed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Close() did not return in time; the watcher goroutine likely did not stop")
+	}
+
+	// Close() returning only proves our call unblocked; check the watcher's own
+	// status to confirm its goroutine actually exited, not just that Wait()
+	// happened to return.
+	if got := nrtCache.TestOnlyWatcherStatus(); got != WatcherStatusStopped {
+		t.Fatalf("expected watcher stopped after Close(), got %q", got)
+	}
 }
 
 func TestMakeNodeToPodDataMap(t *testing.T) {

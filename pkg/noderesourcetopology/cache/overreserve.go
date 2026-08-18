@@ -455,6 +455,12 @@ func (ov *OverReserve) TestOnlyUpdateNRT(nrt *topologyv1alpha2.NodeResourceTopol
 	})
 }
 
+// TestOnlyWatcherStatus reports the lifecycle status of the underlying NRT watcher.
+// to be used only in tests.
+func (ov *OverReserve) TestOnlyWatcherStatus() WatcherStatus {
+	return ov.nrtWatcher.TestOnlyWatcherStatus()
+}
+
 func categorizePod(pod *corev1.Pod, nrtResources sets.Set[corev1.ResourceName]) podData {
 	pd := podData{
 		Namespace: pod.Namespace,
