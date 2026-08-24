@@ -233,6 +233,11 @@ func (in *NodeResourceTopologyMatchArgs) DeepCopyInto(out *NodeResourceTopologyM
 		*out = new(PreemptionMode)
 		**out = **in
 	}
+	if in.MissingTopologyDataPolicy != nil {
+		in, out := &in.MissingTopologyDataPolicy, &out.MissingTopologyDataPolicy
+		*out = new(TopologyDataPolicy)
+		**out = **in
+	}
 	return
 }
 

@@ -1289,6 +1289,74 @@ func parseState(error string) *fwk.Status {
 	return fwk.NewStatus(fwk.Unschedulable, error)
 }
 
+func TestFilterMissingTopologyDataPolicy(t *testing.T) {
+	fakeClient, err := tu.NewFakeClient()
+	if err != nil {
+		t.Fatalf("failed to create fake client: %v", err)
+	}
+
+	node := &v1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: "node-no-nrt"},
+		Status: v1.NodeStatus{
+			Capacity: v1.ResourceList{
+				v1.ResourceCPU:    resource.MustParse("64"),
+				v1.ResourceMemory: resource.MustParse("128Gi"),
+			},
+		},
+	}
+
+	pod := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-pod", Namespace: "default"},
+		Spec: v1.PodSpec{
+			Containers: []v1.Container{
+				{
+					Name: "cnt",
+					Resources: v1.ResourceRequirements{
+						Limits: v1.ResourceList{
+							v1.ResourceCPU:    resource.MustParse("4"),
+							v1.ResourceMemory: resource.MustParse("8Gi"),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	tests := []struct {
+		name             string
+		rejectWithoutNRT bool
+		wantStatus       *fwk.Status
+	}{
+		{
+			name:             "allow policy: node without NRT passes filter",
+			rejectWithoutNRT: false,
+			wantStatus:       nil,
+		},
+		{
+			name:             "reject policy: node without NRT is unschedulable",
+			rejectWithoutNRT: true,
+			wantStatus:       fwk.NewStatus(fwk.Unschedulable, "node has no topology data"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tm := TopologyMatch{
+				nrtCache:         nrtcache.NewPassthrough(testr.New(t), fakeClient),
+				rejectWithoutNRT: tt.rejectWithoutNRT,
+			}
+
+			nodeInfo := framework.NewNodeInfo()
+			nodeInfo.SetNode(node)
+			gotStatus := tm.Filter(context.Background(), framework.NewCycleState(), pod, nodeInfo)
+
+			if !quasiEqualStatus(gotStatus, tt.wantStatus) {
+				t.Errorf("status does not match: %v, want: %v", gotStatus, tt.wantStatus)
+			}
+		})
+	}
+}
+
 func quasiEqualStatus(s, x *fwk.Status) bool {
 	if s == nil || x == nil {
 		return s.IsSuccess() && x.IsSuccess()

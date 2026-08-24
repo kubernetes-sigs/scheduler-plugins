@@ -677,7 +677,7 @@ func TestTopologyCachePluginWithPodFingerprintUpdates(t *testing.T) {
 	}
 
 	// because caching, each testcase needs to run from a clean slate
-	extTestCtx := makeNRTSchedTestContext(t, nil)
+	extTestCtx := makeNRTSchedTestContext(t)
 	testCtx := extTestCtx.tctx // shortcut
 
 	defer func() {
@@ -860,6 +860,115 @@ func TestTopologyCachePluginWithPodFingerprintUpdates(t *testing.T) {
 	t.Logf("Case %v finished", tt.name)
 }
 
+func TestTopologyCachePluginWithPostStartNRT(t *testing.T) {
+
+	os.Args = []string{"unused", "-logtostderr", "-v", schedVerbose}
+	t.Logf("args = %v", os.Args[1:])
+	flag.Parse()
+
+	rejectPolicy := schedconfig.TopologyDataPolicyReject
+	extTestCtx := makeNRTSchedTestContext(t, withMissingTopologyDataPolicy(&rejectPolicy))
+	testCtx := extTestCtx.tctx
+
+	defer func() {
+		cleanupTest(t, testCtx)
+		t.Log("test environment cleaned up")
+	}()
+
+	if err := waitForNRT(t, extTestCtx.cli); err != nil {
+		t.Fatalf("Timed out waiting for CRD to be ready: %v", err)
+	}
+
+	ns := fmt.Sprintf("integration-test-%v", string(uuid.NewUUID()))
+	createNamespace(t, testCtx, ns)
+
+	nodeName := "fake-node-late"
+	nodeCapacity := map[corev1.ResourceName]string{
+		corev1.ResourceCPU:    "64",
+		corev1.ResourceMemory: "128Gi",
+		corev1.ResourcePods:   "128",
+	}
+	newNode := st.MakeNode().Name(nodeName).Label("node", nodeName).Capacity(nodeCapacity).Obj()
+	if _, err := extTestCtx.cli.CoreV1().Nodes().Create(testCtx.Ctx, newNode, metav1.CreateOptions{}); err != nil {
+		t.Fatalf("Failed to create Node %q: %v", nodeName, err)
+	}
+	t.Logf("Created node %q without NRT", nodeName)
+
+	testCtx = initTestSchedulerWithOptions(
+		t,
+		testCtx,
+		scheduler.WithProfiles(extTestCtx.cfg.Profiles...),
+		scheduler.WithPodMaxInUnschedulablePodsDuration(10*time.Second),
+		scheduler.WithFrameworkOutOfTreeRegistry(fwkruntime.Registry{noderesourcetopology.Name: noderesourcetopology.New}),
+	)
+	syncInformerFactory(testCtx)
+	go testCtx.Scheduler.Run(testCtx.Ctx)
+	t.Log("init scheduler success (no NRT objects, reject policy)")
+
+	pod := util.WithLimits(st.MakePod().Namespace(ns).Name("nrt-poststart-pod").SchedulerName("default-scheduler"), map[string]string{
+		string(corev1.ResourceCPU):    "24",
+		string(corev1.ResourceMemory): "12Gi",
+	}, false).Obj()
+
+	defer func() {
+		cleanupPods(t, testCtx, []*corev1.Pod{pod})
+		t.Log("Pods cleaned up")
+	}()
+
+	t.Logf("Creating Pod %q", pod.Name)
+	if _, err := extTestCtx.cli.CoreV1().Pods(ns).Create(testCtx.Ctx, pod, metav1.CreateOptions{}); err != nil {
+		t.Fatalf("Failed to create Pod %q: %v", pod.Name, err)
+	}
+
+	_, err := podIsPending(t, 1*time.Second, 30, extTestCtx.cli, ns, pod.Name)
+	if err != nil {
+		t.Fatalf("Pod %q should be pending (reject policy, no NRT): %v", pod.Name, err)
+	}
+	t.Logf("Pod %q is pending as expected (no NRT, reject policy)", pod.Name)
+
+	lateNRTs := []*topologyv1alpha2.NodeResourceTopology{
+		MakeNRT().Name(nodeName).
+			Policy(topologyv1alpha2.SingleNUMANodeContainerLevel).
+			Attributes(topologyv1alpha2.AttributeList{
+				{
+					Name:  nodeconfig.AttributePolicy,
+					Value: "single-numa-node",
+				},
+				{
+					Name:  nodeconfig.AttributeScope,
+					Value: "container",
+				},
+			}).
+			Zone(
+				topologyv1alpha2.ResourceInfoList{
+					noderesourcetopology.MakeTopologyResInfo(cpu, "32", "30"),
+					noderesourcetopology.MakeTopologyResInfo(memory, "64Gi", "62Gi"),
+				}).
+			Zone(
+				topologyv1alpha2.ResourceInfoList{
+					noderesourcetopology.MakeTopologyResInfo(cpu, "32", "30"),
+					noderesourcetopology.MakeTopologyResInfo(memory, "64Gi", "62Gi"),
+				}).Obj(),
+	}
+
+	defer cleanupNodeResourceTopologies(t, testCtx.Ctx, extTestCtx.extCli, lateNRTs)
+
+	t.Logf("Creating NRT for %q post-scheduler-start", nodeName)
+	if err := createNodeResourceTopologies(testCtx.Ctx, extTestCtx.extCli, lateNRTs); err != nil {
+		t.Fatalf("Failed to create late NRT: %v", err)
+	}
+
+	scheduledPod, err := podIsScheduled(t, 5*time.Second, 60, extTestCtx.cli, ns, pod.Name)
+	if err != nil {
+		t.Fatalf("Pod %q should have been scheduled after late NRT creation: %v", pod.Name, err)
+	}
+
+	if scheduledPod.Spec.NodeName != nodeName {
+		t.Errorf("Pod %q landed on %q, expected %q", pod.Name, scheduledPod.Spec.NodeName, nodeName)
+	}
+	t.Logf("Pod %q scheduled on %q after late NRT ingestion", pod.Name, scheduledPod.Spec.NodeName)
+}
+
 func TestTopologyCachePluginWithAttributeUpdates(t *testing.T) {
 
 	os.Args = []string{"unused", "-logtostderr", "-v", schedVerbose}
@@ -917,7 +1026,7 @@ func TestTopologyCachePluginWithAttributeUpdates(t *testing.T) {
 	cacheArgs := schedconfig.NodeResourceTopologyCache{
 		ResyncScope: &cacheResyncScope,
 	}
-	extTestCtx := makeNRTSchedTestContext(t, &cacheArgs)
+	extTestCtx := makeNRTSchedTestContext(t, withCache(&cacheArgs))
 	testCtx := extTestCtx.tctx // shortcut
 
 	defer func() {
@@ -1102,7 +1211,22 @@ func (etc extTestContext) CacheResyncPeriodSeconds(mult int) time.Duration {
 	return time.Duration(int64(mult)*etc.matchArgs.CacheResyncPeriodSeconds) * time.Second
 }
 
-func makeNRTSchedTestContext(t *testing.T, cacheArgs *schedconfig.NodeResourceTopologyCache) extTestContext {
+type nrtSchedOption func(*schedconfig.NodeResourceTopologyMatchArgs)
+
+func withCache(cache *schedconfig.NodeResourceTopologyCache) nrtSchedOption {
+	return func(args *schedconfig.NodeResourceTopologyMatchArgs) {
+		args.Cache = cache
+	}
+}
+
+// TODO: generalize?
+func withMissingTopologyDataPolicy(policy *schedconfig.TopologyDataPolicy) nrtSchedOption {
+	return func(args *schedconfig.NodeResourceTopologyMatchArgs) {
+		args.MissingTopologyDataPolicy = policy
+	}
+}
+
+func makeNRTSchedTestContext(t *testing.T, opts ...nrtSchedOption) extTestContext {
 	t.Helper()
 
 	testCtx := &testContext{}
@@ -1127,7 +1251,9 @@ func makeNRTSchedTestContext(t *testing.T, cacheArgs *schedconfig.NodeResourceTo
 	matchArgs := schedconfig.NodeResourceTopologyMatchArgs{
 		ScoringStrategy:          schedconfig.ScoringStrategy{Type: schedconfig.LeastAllocated},
 		CacheResyncPeriodSeconds: defaultCacheResyncPeriodSeconds,
-		Cache:                    cacheArgs,
+	}
+	for _, opt := range opts {
+		opt(&matchArgs)
 	}
 
 	cfg.Profiles[0].Plugins.Filter.Enabled = append(cfg.Profiles[0].Plugins.Filter.Enabled, schedapi.Plugin{Name: noderesourcetopology.Name})

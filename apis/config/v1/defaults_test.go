@@ -211,7 +211,8 @@ func TestSchedulingDefaults(t *testing.T) {
 					ResyncMethod:      &defaultResyncMethod,
 					InformerMode:      &defaultInformerMode,
 				},
-				PreemptionMode: &defaultPreemptionMode,
+				PreemptionMode:            &defaultPreemptionMode,
+				MissingTopologyDataPolicy: &defaultMissingTopologyDataPolicy,
 			},
 		},
 		{
@@ -229,7 +230,8 @@ func TestSchedulingDefaults(t *testing.T) {
 					ResyncMethod:      &defaultResyncMethod,
 					InformerMode:      &defaultInformerMode,
 				},
-				PreemptionMode: ptr.To(PreemptionEnabled),
+				PreemptionMode:            ptr.To(PreemptionEnabled),
+				MissingTopologyDataPolicy: &defaultMissingTopologyDataPolicy,
 			},
 		},
 		{
@@ -295,6 +297,25 @@ func TestSchedulingDefaults(t *testing.T) {
 			expect: &SySchedArgs{
 				DefaultProfileNamespace: pointer.StringPtr("default"),
 				DefaultProfileName:      pointer.StringPtr("all-syscalls"),
+			},
+		},
+		{
+			name: "set non default NodeResourceTopologyMatchArgs DataPolicy",
+			config: &NodeResourceTopologyMatchArgs{
+				MissingTopologyDataPolicy: ptr.To(TopologyDataPolicyReject),
+			},
+			expect: &NodeResourceTopologyMatchArgs{
+				ScoringStrategy: &ScoringStrategy{
+					Type:      LeastAllocated,
+					Resources: defaultResourceSpec,
+				},
+				Cache: &NodeResourceTopologyCache{
+					ForeignPodsDetect: &defaultForeignPodsDetect,
+					ResyncMethod:      &defaultResyncMethod,
+					InformerMode:      &defaultInformerMode,
+				},
+				PreemptionMode:            ptr.To(PreemptionDisabled),
+				MissingTopologyDataPolicy: ptr.To(TopologyDataPolicyReject),
 			},
 		},
 	}

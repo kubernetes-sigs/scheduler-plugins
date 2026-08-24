@@ -187,7 +187,8 @@ profiles:
 									ResyncMethod:      ptr.To(config.CacheResyncAutodetect),
 									InformerMode:      ptr.To(config.CacheInformerDedicated),
 								},
-								PreemptionMode: ptr.To(config.PreemptionDisabled),
+								PreemptionMode:            ptr.To(config.PreemptionDisabled),
+								MissingTopologyDataPolicy: ptr.To(config.TopologyDataPolicyAllow),
 							},
 						},
 						{

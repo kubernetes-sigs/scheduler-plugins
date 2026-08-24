@@ -30,6 +30,7 @@ var (
 	supportNodeResourcesMode sets.Set[string]
 	validScoringStrategy     sets.Set[string]
 	validPreemptionMode      sets.Set[string]
+	validTopologyDataPolicy  sets.Set[string]
 )
 
 func init() {
@@ -49,6 +50,11 @@ func init() {
 		string(config.PreemptionDisabled),
 		string(config.PreemptionEnabled),
 	)
+
+	validTopologyDataPolicy = sets.New[string](
+		string(config.TopologyDataPolicyAllow),
+		string(config.TopologyDataPolicyReject),
+	)
 }
 
 func ValidateNodeResourceTopologyMatchArgs(path *field.Path, args *config.NodeResourceTopologyMatchArgs) error {
@@ -56,6 +62,15 @@ func ValidateNodeResourceTopologyMatchArgs(path *field.Path, args *config.NodeRe
 	scoringStrategyTypePath := path.Child("scoringStrategy.type")
 	if err := validateScoringStrategyType(args.ScoringStrategy.Type, scoringStrategyTypePath); err != nil {
 		allErrs = append(allErrs, err)
+	}
+	if args.MissingTopologyDataPolicy != nil {
+		if !validTopologyDataPolicy.Has(string(*args.MissingTopologyDataPolicy)) {
+			allErrs = append(allErrs, field.Invalid(
+				path.Child("missingTopologyDataPolicy"),
+				*args.MissingTopologyDataPolicy,
+				"invalid TopologyDataPolicy",
+			))
+		}
 	}
 
 	if args.PreemptionMode != nil {

@@ -76,6 +76,7 @@ type TopologyMatch struct {
 	scoreStrategyFunc   scoreStrategyFn
 	scoreStrategyType   apiconfig.ScoringStrategyType
 	preemptionMode      apiconfig.PreemptionMode
+	rejectWithoutNRT    bool
 }
 
 var _ fwk.PreFilterPlugin = &TopologyMatch{}
@@ -130,6 +131,11 @@ func New(ctx context.Context, args runtime.Object, handle fwk.Handle) (fwk.Plugi
 		return nil, err
 	}
 
+	rejectWithoutNRT := false
+	if tcfg.MissingTopologyDataPolicy != nil && *tcfg.MissingTopologyDataPolicy == apiconfig.TopologyDataPolicyReject {
+		rejectWithoutNRT = true
+	}
+
 	topologyMatch := &TopologyMatch{
 		logger:              lh,
 		resourceToWeightMap: resToWeightMap,
@@ -137,6 +143,7 @@ func New(ctx context.Context, args runtime.Object, handle fwk.Handle) (fwk.Plugi
 		scoreStrategyFunc:   strategy,
 		scoreStrategyType:   tcfg.ScoringStrategy.Type,
 		preemptionMode:      *tcfg.PreemptionMode,
+		rejectWithoutNRT:    rejectWithoutNRT,
 	}
 
 	return topologyMatch, nil
