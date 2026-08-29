@@ -387,4 +387,9 @@ type NodeMetadataArgs struct {
 	//   - Unix timestamp: Use MetadataType "Number" instead
 	//   - Custom: "2006-01-02 15:04:05"
 	TimestampFormat string `json:"timestampFormat,omitempty"`
+
+	// DefaultValue is used when a node does not have MetadataKey. It must be a
+	// valid value for MetadataType and is scored using ScoringStrategy.
+	// Nodes with malformed metadata still receive the lowest score.
+	DefaultValue string `json:"defaultValue,omitempty"`
 }

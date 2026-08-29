@@ -241,6 +241,11 @@ func (in *NodeMetadataArgs) DeepCopyInto(out *NodeMetadataArgs) {
 		*out = new(string)
 		**out = **in
 	}
+	if in.DefaultValue != nil {
+		in, out := &in.DefaultValue, &out.DefaultValue
+		*out = new(string)
+		**out = **in
+	}
 	return
 }
 

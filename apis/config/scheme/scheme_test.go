@@ -322,6 +322,7 @@ profiles:
       metadataSource: "Label"
       metadataType: "Number"
       scoringStrategy: "Highest"
+      defaultValue: "100"
 `),
 			wantProfiles: []schedconfig.KubeSchedulerProfile{
 				{
@@ -335,6 +336,7 @@ profiles:
 								MetadataSource:  config.MetadataSourceLabel,
 								MetadataType:    config.MetadataTypeNumber,
 								ScoringStrategy: config.ScoringStrategyHighest,
+								DefaultValue:    "100",
 							},
 						},
 						{
@@ -504,6 +506,7 @@ func TestCodecsEncodePluginConfig(t *testing.T) {
 									MetadataSource:  config.MetadataSourceLabel,
 									MetadataType:    config.MetadataTypeNumber,
 									ScoringStrategy: config.ScoringStrategyHighest,
+									DefaultValue:    "100",
 								},
 							},
 						},
@@ -606,6 +609,7 @@ profiles:
     name: NetworkOverhead
   - args:
       apiVersion: kubescheduler.config.k8s.io/v1
+      defaultValue: "100"
       kind: NodeMetadataArgs
       metadataKey: priority
       metadataSource: Label
