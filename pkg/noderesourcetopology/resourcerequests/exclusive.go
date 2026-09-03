@@ -20,21 +20,15 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/sets"
+	podutil "k8s.io/kubernetes/pkg/api/v1/pod"
 	v1helper "k8s.io/kubernetes/pkg/apis/core/v1/helper"
 	v1qos "k8s.io/kubernetes/pkg/apis/core/v1/helper/qos"
 	"sigs.k8s.io/scheduler-plugins/pkg/util"
 )
 
 func IncludeNonNative(pod *corev1.Pod) bool {
-	for _, initContainer := range pod.Spec.InitContainers {
-		for resource := range initContainer.Resources.Requests {
-			if !v1helper.IsNativeResource(resource) {
-				return true
-			}
-		}
-	}
-	for _, container := range pod.Spec.Containers {
-		for resource := range container.Resources.Requests {
+	for ctr := range podutil.ContainerIter(&pod.Spec, podutil.InitContainers|podutil.Containers) {
+		for resource := range ctr.Resources.Requests {
 			if !v1helper.IsNativeResource(resource) {
 				return true
 			}
@@ -48,18 +42,18 @@ func IncludeNonNative(pod *corev1.Pod) bool {
 func AreExclusiveForPod(pod *corev1.Pod, nrtResources sets.Set[corev1.ResourceName]) bool {
 	qos := v1qos.GetPodQOS(pod)
 
-	for _, ctr := range pod.Spec.InitContainers {
+	for ctr := range podutil.ContainerIter(&pod.Spec, podutil.InitContainers) {
 		// skip init containers with restart policy other than Always because these are *supposed* to
 		// run fast and finish, hence not consuming exclusive resources in a steady state while the pod is Running.
-		if !util.IsSidecarInitContainer(&ctr) {
+		if !util.IsSidecarInitContainer(ctr) {
 			continue
 		}
-		if IsExclusiveForContainer(qos, ctr, nrtResources) {
+		if IsExclusiveForContainer(qos, *ctr, nrtResources) {
 			return true
 		}
 	}
-	for _, ctr := range pod.Spec.Containers {
-		if IsExclusiveForContainer(qos, ctr, nrtResources) {
+	for ctr := range podutil.ContainerIter(&pod.Spec, podutil.Containers) {
+		if IsExclusiveForContainer(qos, *ctr, nrtResources) {
 			return true
 		}
 	}
