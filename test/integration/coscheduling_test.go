@@ -28,7 +28,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/util/wait"
+	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/client-go/kubernetes"
+	featuregatetesting "k8s.io/component-base/featuregate/testing"
+	"k8s.io/kubernetes/pkg/features"
 	"k8s.io/kubernetes/pkg/scheduler"
 	schedapi "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	fwkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
@@ -44,6 +47,18 @@ import (
 )
 
 func TestCoschedulingPlugin(t *testing.T) {
+	// This test has a high-priority workload preempt a lower-priority PodGroup whose
+	// Pods are parked on Permit. Such a victim is only *assumed*, and coscheduling
+	// releases it (ForgetPod, NominatedNodeName cleared) before the async preemption
+	// goroutine deletes it - at which point deletePodFromSchedulingQueue emits no
+	// cluster event at all. The preemptor then stays gated by DefaultPreemption's
+	// PreEnqueue in unschedulablePods with nothing left to wake it up, not even
+	// flushUnschedulablePodsLeftover, which skips gated Pods. Turning async preemption
+	// off removes that gate; without this the test stalls in roughly a third of runs.
+	// See #1007 and kubernetes/kubernetes#141694.
+	// TODO: drop this once the upstream wake-up gap is fixed.
+	featuregatetesting.SetFeatureGateDuringTest(t, utilfeature.DefaultFeatureGate, features.SchedulerAsyncPreemption, false)
+
 	testCtx := &testContext{}
 	testCtx.Ctx, testCtx.CancelFn = context.WithCancel(context.Background())
 
@@ -79,6 +94,9 @@ func TestCoschedulingPlugin(t *testing.T) {
 	cfg.Profiles[0].Plugins.PreFilter.Enabled = append(cfg.Profiles[0].Plugins.PreFilter.Enabled, schedapi.Plugin{Name: coscheduling.Name})
 	cfg.Profiles[0].Plugins.PostFilter.Enabled = append(cfg.Profiles[0].Plugins.PostFilter.Enabled, schedapi.Plugin{Name: coscheduling.Name})
 	cfg.Profiles[0].Plugins.Permit.Enabled = append(cfg.Profiles[0].Plugins.Permit.Enabled, schedapi.Plugin{Name: coscheduling.Name})
+	// Coscheduling implements Reserve/Unreserve and the shipped `multiPoint` config
+	// enables it there, so mirror that here - otherwise Unreserve never runs.
+	cfg.Profiles[0].Plugins.Reserve.Enabled = append(cfg.Profiles[0].Plugins.Reserve.Enabled, schedapi.Plugin{Name: coscheduling.Name})
 	cfg.Profiles[0].PluginConfig = append(cfg.Profiles[0].PluginConfig, schedapi.PluginConfig{
 		Name: coscheduling.Name,
 		Args: &schedconfig.CoschedulingArgs{
@@ -412,6 +430,9 @@ func TestPodCompleted(t *testing.T) {
 	cfg.Profiles[0].Plugins.PreFilter.Enabled = append(cfg.Profiles[0].Plugins.PreFilter.Enabled, schedapi.Plugin{Name: coscheduling.Name})
 	cfg.Profiles[0].Plugins.PostFilter.Enabled = append(cfg.Profiles[0].Plugins.PostFilter.Enabled, schedapi.Plugin{Name: coscheduling.Name})
 	cfg.Profiles[0].Plugins.Permit.Enabled = append(cfg.Profiles[0].Plugins.Permit.Enabled, schedapi.Plugin{Name: coscheduling.Name})
+	// Coscheduling implements Reserve/Unreserve and the shipped `multiPoint` config
+	// enables it there, so mirror that here - otherwise Unreserve never runs.
+	cfg.Profiles[0].Plugins.Reserve.Enabled = append(cfg.Profiles[0].Plugins.Reserve.Enabled, schedapi.Plugin{Name: coscheduling.Name})
 	cfg.Profiles[0].PluginConfig = append(cfg.Profiles[0].PluginConfig, schedapi.PluginConfig{
 		Name: coscheduling.Name,
 		Args: &schedconfig.CoschedulingArgs{
@@ -544,6 +565,9 @@ func TestPodgroupBackoff(t *testing.T) {
 	cfg.Profiles[0].Plugins.PreFilter.Enabled = append(cfg.Profiles[0].Plugins.PreFilter.Enabled, schedapi.Plugin{Name: coscheduling.Name})
 	cfg.Profiles[0].Plugins.PostFilter.Enabled = append(cfg.Profiles[0].Plugins.PostFilter.Enabled, schedapi.Plugin{Name: coscheduling.Name})
 	cfg.Profiles[0].Plugins.Permit.Enabled = append(cfg.Profiles[0].Plugins.Permit.Enabled, schedapi.Plugin{Name: coscheduling.Name})
+	// Coscheduling implements Reserve/Unreserve and the shipped `multiPoint` config
+	// enables it there, so mirror that here - otherwise Unreserve never runs.
+	cfg.Profiles[0].Plugins.Reserve.Enabled = append(cfg.Profiles[0].Plugins.Reserve.Enabled, schedapi.Plugin{Name: coscheduling.Name})
 	cfg.Profiles[0].PluginConfig = append(cfg.Profiles[0].PluginConfig, schedapi.PluginConfig{
 		Name: coscheduling.Name,
 		Args: &schedconfig.CoschedulingArgs{
