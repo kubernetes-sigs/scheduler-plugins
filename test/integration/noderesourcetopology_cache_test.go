@@ -55,7 +55,7 @@ import (
 )
 
 const (
-	defaultCacheResyncPeriodSeconds int64 = 5
+	defaultCacheResyncPeriodSeconds int64 = 2
 	anyNode                               = "*"
 	discardReservedSchedulerName          = "discardReserved"
 )
