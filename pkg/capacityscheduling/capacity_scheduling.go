@@ -38,6 +38,7 @@ import (
 	extenderv1 "k8s.io/kube-scheduler/extender/v1"
 	fwk "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
+	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/feature"
 	"k8s.io/kubernetes/pkg/scheduler/framework/preemption"
 	"k8s.io/kubernetes/pkg/scheduler/metrics"
 	schedutil "k8s.io/kubernetes/pkg/scheduler/util"
@@ -341,7 +342,7 @@ func (c *CapacityScheduling) PostFilter(ctx context.Context, state fwk.CycleStat
 			fh:     c.fh,
 			state:  state,
 		},
-		false, // enableAsyncPreemption
+		preemption.NewExecutor(c.fh, feature.Features{}), // no feature enabled, i.e. preemption is synchronous
 	)
 
 	return pe.Preempt(ctx, state, pod, m)
@@ -557,9 +558,6 @@ func (p *preemptor) SelectVictimsOnNode(
 				// preemptor's priority as potential victims in a node.
 				if p.GetPod().Namespace == pod.Namespace && corev1helpers.PodPriority(p.GetPod()) < podPriority {
 					potentialVictims = append(potentialVictims, p)
-					if err := removePod(p); err != nil {
-						return nil, 0, fwk.AsStatus(err)
-					}
 				}
 
 			} else {
@@ -571,9 +569,6 @@ func (p *preemptor) SelectVictimsOnNode(
 				// Quotas.
 				if p.GetPod().Namespace != pod.Namespace && eqInfo.usedOverMin() {
 					potentialVictims = append(potentialVictims, p)
-					if err := removePod(p); err != nil {
-						return nil, 0, fwk.AsStatus(err)
-					}
 				}
 			}
 		}
@@ -585,10 +580,15 @@ func (p *preemptor) SelectVictimsOnNode(
 			}
 			if corev1helpers.PodPriority(p.GetPod()) < podPriority {
 				potentialVictims = append(potentialVictims, p)
-				if err := removePod(p); err != nil {
-					return nil, 0, fwk.AsStatus(err)
-				}
 			}
+		}
+	}
+
+	// Remove the victims only once the loops above are done: removePod mutates the
+	// very slice that nodeInfo.GetPods() returns.
+	for _, p := range potentialVictims {
+		if err := removePod(p); err != nil {
+			return nil, 0, fwk.AsStatus(err)
 		}
 	}
 

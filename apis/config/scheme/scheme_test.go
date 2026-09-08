@@ -122,7 +122,8 @@ profiles:
 						{
 							Name: "DynamicResources",
 							Args: &schedconfig.DynamicResourcesArgs{
-								FilterTimeout: ptr.To(metav1.Duration{Duration: 10 * time.Second}),
+								FilterTimeout:  ptr.To(metav1.Duration{Duration: 10 * time.Second}),
+								BindingTimeout: ptr.To(metav1.Duration{Duration: 10 * time.Minute}),
 							},
 						},
 						{
@@ -197,7 +198,8 @@ profiles:
 						{
 							Name: "DynamicResources",
 							Args: &schedconfig.DynamicResourcesArgs{
-								FilterTimeout: ptr.To(metav1.Duration{Duration: 10 * time.Second}),
+								FilterTimeout:  ptr.To(metav1.Duration{Duration: 10 * time.Second}),
+								BindingTimeout: ptr.To(metav1.Duration{Duration: 10 * time.Minute}),
 							},
 						},
 						{
@@ -272,7 +274,8 @@ profiles:
 						{
 							Name: "DynamicResources",
 							Args: &schedconfig.DynamicResourcesArgs{
-								FilterTimeout: ptr.To(metav1.Duration{Duration: 10 * time.Second}),
+								FilterTimeout:  ptr.To(metav1.Duration{Duration: 10 * time.Second}),
+								BindingTimeout: ptr.To(metav1.Duration{Duration: 10 * time.Minute}),
 							},
 						},
 						{
@@ -344,7 +347,8 @@ profiles:
 						{
 							Name: "DynamicResources",
 							Args: &schedconfig.DynamicResourcesArgs{
-								FilterTimeout: ptr.To(metav1.Duration{Duration: 10 * time.Second}),
+								FilterTimeout:  ptr.To(metav1.Duration{Duration: 10 * time.Second}),
+								BindingTimeout: ptr.To(metav1.Duration{Duration: 10 * time.Minute}),
 							},
 						},
 						{

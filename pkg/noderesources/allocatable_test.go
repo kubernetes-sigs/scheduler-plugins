@@ -358,6 +358,10 @@ func (f *fakeSharedLister) StorageInfos() fwk.StorageInfoLister {
 	return nil
 }
 
+func (f *fakeSharedLister) PodGroupStates() fwk.PodGroupStateLister {
+	return nil
+}
+
 func (f *fakeSharedLister) NodeInfos() fwk.NodeInfoLister {
 	return tf.NodeInfoLister(f.nodes)
 }
