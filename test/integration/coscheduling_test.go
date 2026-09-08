@@ -378,7 +378,7 @@ func TestCoschedulingPlugin(t *testing.T) {
 					t.Fatalf("Failed to create Pod %q: %v", tt.pods[i].Name, err)
 				}
 			}
-			err = wait.PollUntilContextTimeout(testCtx.Ctx, 1*time.Second, 120*time.Second, false, func(ctx context.Context) (bool, error) {
+			err = wait.PollUntilContextTimeout(testCtx.Ctx, 200*time.Millisecond, 120*time.Second, true, func(ctx context.Context) (bool, error) {
 				for _, v := range tt.expectedPods {
 					if !podScheduled(t, cs, ns, v) {
 						return false, nil
@@ -694,7 +694,7 @@ func TestPodgroupBackoff(t *testing.T) {
 					t.Fatalf("Failed to create Pod %q: %v", tt.pods[i].Name, err)
 				}
 			}
-			err = wait.PollUntilContextTimeout(testCtx.Ctx, 1*time.Second, 120*time.Second, false, func(ctx context.Context) (bool, error) {
+			err = wait.PollUntilContextTimeout(testCtx.Ctx, 200*time.Millisecond, 120*time.Second, true, func(ctx context.Context) (bool, error) {
 				for _, v := range tt.expectedPods {
 					if !podScheduled(t, cs, ns, v) {
 						return false, nil

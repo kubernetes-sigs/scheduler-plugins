@@ -209,7 +209,7 @@ func (n *nrtWrapper) Obj() *topologyv1alpha2.NodeResourceTopology {
 func podIsScheduled(t *testing.T, interval time.Duration, times int, cs clientset.Interface, podNamespace, podName string) (*corev1.Pod, error) {
 	var err error
 	var pod *corev1.Pod
-	waitErr := wait.PollUntilContextTimeout(context.TODO(), interval, time.Duration(times)*interval, false, func(ctx context.Context) (bool, error) {
+	waitErr := wait.PollUntilContextTimeout(context.TODO(), min(interval, 200*time.Millisecond), time.Duration(times)*interval, true, func(ctx context.Context) (bool, error) {
 		pod, err = cs.CoreV1().Pods(podNamespace).Get(ctx, podName, metav1.GetOptions{})
 		if err != nil {
 			// This could be a connection error so we want to retry.

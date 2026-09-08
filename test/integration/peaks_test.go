@@ -194,7 +194,7 @@ func TestPeaksPlugin(t *testing.T) {
 
 	expected := [2]string{nodeNames[0], nodeNames[1]}
 	for i := range newPods {
-		err := wait.PollUntilContextTimeout(testCtx.Ctx, 1*time.Second, 10*time.Second, false, func(ctx context.Context) (bool, error) {
+		err := wait.PollUntilContextTimeout(testCtx.Ctx, 200*time.Millisecond, 10*time.Second, true, func(ctx context.Context) (bool, error) {
 			return podScheduled(t, cs, newPods[i].Namespace, newPods[i].Name), nil
 		})
 		assert.Nil(t, err)

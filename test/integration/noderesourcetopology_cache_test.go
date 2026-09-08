@@ -1160,7 +1160,7 @@ func waitForPodList(t *testing.T, cs clientset.Interface, podDescs []podDesc, ti
 			defer wg.Done()
 
 			var updatedPod *corev1.Pod
-			err := wait.PollUntilContextTimeout(context.TODO(), 5*time.Second, timeout, false, func(ctx context.Context) (bool, error) {
+			err := wait.PollUntilContextTimeout(context.TODO(), 200*time.Millisecond, timeout, true, func(ctx context.Context) (bool, error) {
 				var nerr error
 				updatedPod, nerr = cs.CoreV1().Pods(pod.Namespace).Get(ctx, pod.Name, metav1.GetOptions{})
 				if nerr != nil {
