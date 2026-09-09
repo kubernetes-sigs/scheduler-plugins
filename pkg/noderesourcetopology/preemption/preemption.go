@@ -54,7 +54,7 @@ func GetNRTPostPodsEviction(lh logr.Logger, nrt *topologyv1alpha2.NodeResourceTo
 	}
 
 	nrtResources := cache.ResourceNamesFromNRT(nrt)
-	numaToResourcesToAdd, err := accumulateResourcesToAddPerNUMA(victims, numaPlacementInfo, nrtResources)
+	numaToResourcesToAdd, err := accumulateResourcesToAddPerNUMA(lh, victims, numaPlacementInfo, nrtResources)
 	if err != nil {
 		return nrt, err
 	}
@@ -64,16 +64,21 @@ func GetNRTPostPodsEviction(lh logr.Logger, nrt *topologyv1alpha2.NodeResourceTo
 	return addResourcesToNodeResourcesTopology(lh, nrt, numaToResourcesToAdd)
 }
 
-func accumulateResourcesToAddPerNUMA(victims []corev1.Pod, numaPlacementInfo *numaplacement.EncodedInfo, nrtResources sets.Set[corev1.ResourceName]) (map[int]corev1.ResourceList, error) {
+func accumulateResourcesToAddPerNUMA(lh logr.Logger, victims []corev1.Pod, numaPlacementInfo *numaplacement.EncodedInfo, nrtResources sets.Set[corev1.ResourceName]) (map[int]corev1.ResourceList, error) {
 	numaToResourcesToAdd := make(map[int]corev1.ResourceList) // numaID -> resource list
 	for _, victim := range victims {
+		lh := lh.WithValues("namespace", victim.Namespace, "name", victim.Name)
+
 		// pod level filtering - exit early
 		pQos := v1qos.GetPodQOS(&victim)
 		if pQos != corev1.PodQOSGuaranteed && !resourcerequests.IncludeNonNative(&victim) {
+			lh.V(6).Info("victim skipped because pod is irrelevant for NRT")
 			continue
 		}
 
 		for _, container := range victim.Spec.Containers {
+			lh := lh.WithValues("container", container.Name)
+
 			containerID := numaplacement.ContainerID{
 				Namespace:     victim.Namespace,
 				PodName:       victim.Name,
@@ -81,12 +86,14 @@ func accumulateResourcesToAddPerNUMA(victims []corev1.Pod, numaPlacementInfo *nu
 			}
 			numaID, err := numaPlacementInfo.NUMAAffinity(containerID)
 			if err != nil {
+				lh.V(6).Info("victim container skipped because mapping to NUMA failed", "error", err)
 				continue
 			}
 			if numaID != -1 {
 				for resName, resQty := range container.Resources.Requests {
 					// resource-level filtering: only add back the exclusive resources
 					if !resourcerequests.IsExclusive(pQos, resName, resQty, nrtResources) {
+						lh.V(6).Info("victim container skipped because resources are shared")
 						continue
 					}
 
