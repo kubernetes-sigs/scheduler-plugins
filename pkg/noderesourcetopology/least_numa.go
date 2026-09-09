@@ -19,6 +19,7 @@ package noderesourcetopology
 import (
 	v1 "k8s.io/api/core/v1"
 	fwk "k8s.io/kube-scheduler/framework"
+	podutil "k8s.io/kubernetes/pkg/api/v1/pod"
 	"k8s.io/kubernetes/pkg/kubelet/cm/topologymanager/bitmask"
 
 	"github.com/go-logr/logr"
@@ -37,7 +38,7 @@ func leastNUMAContainerScopeScore(lh logr.Logger, pod *v1.Pod, info *scoreInfo) 
 	allContainersMinAvgDistance := true
 	// the order how TopologyManager asks for hint is important so doing it in the same order
 	// https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/cm/topologymanager/scope_container.go#L52
-	for _, container := range append(pod.Spec.InitContainers, pod.Spec.Containers...) {
+	for container := range podutil.ContainerIter(&pod.Spec, podutil.InitContainers|podutil.Containers) {
 		// if a container requests only non NUMA just continue
 		if onlyNonNUMAResources(info.numaNodes, container.Resources.Requests) {
 			continue

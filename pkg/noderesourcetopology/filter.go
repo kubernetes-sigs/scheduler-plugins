@@ -24,6 +24,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
 	fwk "k8s.io/kube-scheduler/framework"
+	podutil "k8s.io/kubernetes/pkg/api/v1/pod"
 	v1qos "k8s.io/kubernetes/pkg/apis/core/v1/helper/qos"
 	kubeletconfig "k8s.io/kubernetes/pkg/kubelet/apis/config"
 	bm "k8s.io/kubernetes/pkg/kubelet/cm/topologymanager/bitmask"
@@ -43,8 +44,8 @@ func singleNUMAContainerLevelHandler(lh logr.Logger, pod *v1.Pod, info *filterIn
 	// the init containers are running SERIALLY and BEFORE the normal containers.
 	// https://kubernetes.io/docs/concepts/workloads/pods/init-containers/#understanding-init-containers
 	// therefore, we don't need to accumulate their resources together
-	for _, initContainer := range pod.Spec.InitContainers {
-		cntKind := logging.GetInitContainerKind(&initContainer)
+	for initContainer := range podutil.ContainerIter(&pod.Spec, podutil.InitContainers) {
+		cntKind := logging.GetInitContainerKind(initContainer)
 		clh := lh.WithValues(logging.KeyContainer, initContainer.Name, logging.KeyContainerKind, cntKind)
 		clh.V(6).Info("desired resources", stringify.ResourceListToLoggable(initContainer.Resources.Requests)...)
 
@@ -57,7 +58,7 @@ func singleNUMAContainerLevelHandler(lh logr.Logger, pod *v1.Pod, info *filterIn
 		}
 	}
 
-	for _, container := range pod.Spec.Containers {
+	for container := range podutil.ContainerIter(&pod.Spec, podutil.Containers) {
 		clh := lh.WithValues(logging.KeyContainer, container.Name, logging.KeyContainerKind, logging.KindContainerApp)
 		clh.V(6).Info("container requests", stringify.ResourceListToLoggable(container.Resources.Requests)...)
 

@@ -26,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	fwk "k8s.io/kube-scheduler/framework"
+	podutil "k8s.io/kubernetes/pkg/api/v1/pod"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	apiconfig "sigs.k8s.io/scheduler-plugins/apis/config"
@@ -128,7 +129,7 @@ func makeNodeFromNRT(nrt *topologyv1alpha2.NodeResourceTopology) *v1.Node {
 
 func makeEncodedInfoForPod(pod *v1.Pod, numaNode int) *numaplacement.EncodedInfo {
 	affinities := make([]numaplacement.ContainerAffinity, 0, len(pod.Spec.Containers))
-	for _, container := range pod.Spec.Containers {
+	for container := range podutil.ContainerIter(&pod.Spec, podutil.Containers) {
 		affinities = append(affinities, numaplacement.ContainerAffinity{
 			ID: numaplacement.ContainerID{
 				Namespace:     pod.Namespace,

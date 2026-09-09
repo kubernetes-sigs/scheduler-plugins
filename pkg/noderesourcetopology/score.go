@@ -25,6 +25,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
 	fwk "k8s.io/kube-scheduler/framework"
+	podutil "k8s.io/kubernetes/pkg/api/v1/pod"
 	v1qos "k8s.io/kubernetes/pkg/apis/core/v1/helper/qos"
 	kubeletconfig "k8s.io/kubernetes/pkg/kubelet/apis/config"
 	apiconfig "sigs.k8s.io/scheduler-plugins/apis/config"
@@ -152,12 +153,12 @@ func podScopeScore(lh logr.Logger, pod *v1.Pod, info *scoreInfo, scorerFn scoreS
 func containerScopeScore(lh logr.Logger, pod *v1.Pod, info *scoreInfo, scorerFn scoreStrategyFn, resourceToWeightMap resourceToWeightMap) (int64, *fwk.Status) {
 	// This code is in Admit implementation of container scope
 	// https://github.com/kubernetes/kubernetes/blob/9ff3b7e744b34c099c1405d9add192adbef0b6b1/pkg/kubelet/cm/topologymanager/scope_container.go#L52
-	containers := append(pod.Spec.InitContainers, pod.Spec.Containers...)
-	contScore := make([]float64, len(containers))
+	contScore := make([]float64, 0, len(pod.Spec.InitContainers)+len(pod.Spec.Containers))
 
-	for i, container := range containers {
-		contScore[i] = float64(scoreForEachNUMANode(lh, container.Resources.Requests, info.numaNodes, scorerFn, resourceToWeightMap))
-		lh.V(6).Info("container scope scoring", "container", container.Name, "score", contScore[i])
+	for container := range podutil.ContainerIter(&pod.Spec, podutil.InitContainers|podutil.Containers) {
+		score := float64(scoreForEachNUMANode(lh, container.Resources.Requests, info.numaNodes, scorerFn, resourceToWeightMap))
+		contScore = append(contScore, score)
+		lh.V(6).Info("container scope scoring", "container", container.Name, "score", score)
 	}
 	finalScore := int64(stat.Mean(contScore, nil))
 	lh.V(3).Info("container scope scoring final node score", "finalScore", finalScore)

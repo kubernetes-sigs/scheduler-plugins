@@ -23,6 +23,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/sets"
+	podutil "k8s.io/kubernetes/pkg/api/v1/pod"
 	v1qos "k8s.io/kubernetes/pkg/apis/core/v1/helper/qos"
 
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/cache"
@@ -73,7 +74,7 @@ func accumulateResourcesToAddPerNUMA(victims []corev1.Pod, numaPlacementInfo *nu
 			continue
 		}
 
-		for _, container := range victim.Spec.Containers {
+		for container := range podutil.ContainerIter(&victim.Spec, podutil.Containers) {
 			containerID := numaplacement.ContainerID{
 				Namespace:     victim.Namespace,
 				PodName:       victim.Name,
