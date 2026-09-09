@@ -266,11 +266,11 @@ func TestFilter_PreemptionFlow(t *testing.T) {
 
 		tooLarge := makeGuaranteedPod("default", "preemptor", containerName, 4, "1Gi")
 		status := tm.Filter(context.Background(), cycleState, tooLarge, nodeInfo)
-		if !quasiEqualStatus(status, fwk.NewStatus(fwk.Unschedulable, "eviction simulation in NRT is not possible:no resources to add, cannot process eviction simulation")) {
+		if !quasiEqualStatus(status, fwk.NewStatus(fwk.Unschedulable, "eviction simulation in NRT is not possible:invalid NUMA mapping")) {
 			t.Fatalf("expected unschedulable preemptor, got %v", status)
 		}
-		if len(cache.maybeOverReserved) != 0 {
-			t.Fatalf("preemption flow must not mark node over-reserved on failure, got %v", cache.maybeOverReserved)
+		if len(cache.maybeOverReserved) == 0 || cache.maybeOverReserved[0] != nodeName {
+			t.Fatalf("preemption flow must mark node over-reserved on failure, got %v", cache.maybeOverReserved)
 		}
 	})
 

@@ -86,39 +86,36 @@ func accumulateResourcesToAddPerNUMA(lh logr.Logger, victims []corev1.Pod, numaP
 				continue
 			}
 
+			exclusiveResources := resourcerequests.GetExclusive(pQos, *container, nrtResources)
+			if len(exclusiveResources) == 0 {
+				lh.V(6).Info("victim container skipped: no exclusive resources")
+				continue
+			}
+
 			numaID, err := numaPlacementInfo.NUMAAffinity(numaplacement.ContainerID{
 				Namespace:     victim.Namespace,
 				PodName:       victim.Name,
 				ContainerName: container.Name,
 			})
-			if err != nil {
-				lh.V(6).Info("victim container skipped because mapping to NUMA failed", "error", err)
+
+			if len(exclusiveResources) > 0 && (err != nil || numaID == -1) {
+				lh.V(6).Info("victim container failed mapping to NUMA ID", "error", err)
+				return nil, fmt.Errorf("missing NUMA mapping")
+			}
+
+			numaResources, ok := numaToResourcesToAdd[numaID]
+			if !ok {
+				numaToResourcesToAdd[numaID] = exclusiveResources
 				continue
 			}
-			if numaID != -1 {
-				for resName, resQty := range container.Resources.Requests {
-					// resource-level filtering: only add back the exclusive resources
-					if !resourcerequests.IsExclusive(pQos, resName, resQty, nrtResources) {
-						lh.V(6).Info("victim container skipped because resources are shared")
-						continue
-					}
 
-					numaResources, ok := numaToResourcesToAdd[numaID]
-					if !ok {
-						numaToResourcesToAdd[numaID] = corev1.ResourceList{
-							resName: resQty,
-						}
-						continue
-
-					}
-
-					currentQty, ok := numaResources[resName]
-					if !ok {
-						currentQty = resource.Quantity{}
-					}
-					currentQty.Add(resQty)
-					numaToResourcesToAdd[numaID][resName] = currentQty
+			for resName, resQty := range exclusiveResources {
+				currentQty, ok := numaResources[resName]
+				if !ok {
+					currentQty = resource.Quantity{}
 				}
+				currentQty.Add(resQty)
+				numaToResourcesToAdd[numaID][resName] = currentQty
 			}
 		}
 	}

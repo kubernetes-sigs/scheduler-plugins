@@ -306,7 +306,67 @@ func TestGetNRTPostPodsEviction(t *testing.T) {
 			},
 			numaPlacementInfo:  getTestEncodedInfo10Containers(),
 			expectedUpdatedNRT: getTestNRT(),
-			expectedError:      "no resources to add, cannot process eviction simulation",
+			expectedError:      "invalid NUMA mapping",
+		},
+		{
+			name: "mixed victims with non-exclusive pods and exclusive pod with invalid NUMA mapping",
+			nrt:  getTestNRT(),
+			victims: []corev1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "non-exclusive-0",
+						Namespace: "ns-a",
+					},
+					Status: corev1.PodStatus{
+						QOSClass: corev1.PodQOSBestEffort,
+					},
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{Name: "container-0"},
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "non-exclusive-1",
+						Namespace: "ns-a",
+					},
+					Status: corev1.PodStatus{
+						QOSClass: corev1.PodQOSBestEffort,
+					},
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{Name: "container-0"},
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "newpod",
+						Namespace: "ns-a",
+					},
+					Status: corev1.PodStatus{
+						QOSClass: corev1.PodQOSGuaranteed,
+					},
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{
+								Name: "cnt-0",
+								Resources: corev1.ResourceRequirements{
+									Requests: corev1.ResourceList{
+										"cpu":                        resource.MustParse("1"),
+										"memory":                     resource.MustParse("100Mi"),
+										"example-device.com/deviceA": resource.MustParse("1"),
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			numaPlacementInfo:  getTestEncodedInfo10Containers(),
+			expectedUpdatedNRT: getTestNRT(),
+			expectedError:      "invalid NUMA mapping",
 		},
 		{
 			name: "resources release exceeds allocatable",
