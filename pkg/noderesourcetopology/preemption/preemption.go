@@ -23,10 +23,12 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/sets"
+	podutil "k8s.io/kubernetes/pkg/api/v1/pod"
 	v1qos "k8s.io/kubernetes/pkg/apis/core/v1/helper/qos"
 
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/cache"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/resourcerequests"
+	"sigs.k8s.io/scheduler-plugins/pkg/util"
 
 	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
 	"github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2/helper/numanode"
@@ -76,15 +78,19 @@ func accumulateResourcesToAddPerNUMA(lh logr.Logger, victims []corev1.Pod, numaP
 			continue
 		}
 
-		for _, container := range victim.Spec.Containers {
+		for container, containerType := range podutil.ContainerIter(&victim.Spec, podutil.InitContainers|podutil.Containers) {
 			lh := lh.WithValues("container", container.Name)
 
-			containerID := numaplacement.ContainerID{
+			if containerType == podutil.InitContainers && !util.IsSidecarInitContainer(container) {
+				lh.V(6).Info("victim container skipped: non-restartable init container")
+				continue
+			}
+
+			numaID, err := numaPlacementInfo.NUMAAffinity(numaplacement.ContainerID{
 				Namespace:     victim.Namespace,
 				PodName:       victim.Name,
 				ContainerName: container.Name,
-			}
-			numaID, err := numaPlacementInfo.NUMAAffinity(containerID)
+			})
 			if err != nil {
 				lh.V(6).Info("victim container skipped because mapping to NUMA failed", "error", err)
 				continue
