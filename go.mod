@@ -11,6 +11,7 @@ require (
 	github.com/google/go-cmp v0.7.0
 	github.com/k8stopologyawareschedwg/noderesourcetopology-api v0.1.2
 	github.com/k8stopologyawareschedwg/podfingerprint v0.2.2
+	github.com/kubernetes-csi/external-snapshotter/client/v8 v8.5.0
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/paypal/load-watcher v0.2.4
 	github.com/spf13/pflag v1.0.9
@@ -184,3 +185,8 @@ replace k8s.io/externaljwt => k8s.io/externaljwt v0.35.7
 replace k8s.io/sample-cli-plugin => k8s.io/sample-cli-plugin v0.35.7
 
 replace k8s.io/sample-controller => k8s.io/sample-controller v0.35.7
+
+// TODO(KEP-5943): points at the fork carrying VolumeSnapshotContent.Spec.NodeAffinity.
+// Drop this replace and depend on an official external-snapshotter client release
+// once the snapshot-topology change merges upstream and a client version is tagged.
+replace github.com/kubernetes-csi/external-snapshotter/client/v8 => github.com/mdzraf/external-snapshotter/client/v8 v8.4.1-0.20260630161422-338be19873e7
