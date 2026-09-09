@@ -62,6 +62,10 @@ func (f *testSharedLister) StorageInfos() fwk.StorageInfoLister {
 	return nil
 }
 
+func (f *testSharedLister) PodGroupStates() fwk.PodGroupStateLister {
+	return nil
+}
+
 func (f *testSharedLister) NodeInfos() fwk.NodeInfoLister {
 	return f
 }

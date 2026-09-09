@@ -327,6 +327,7 @@ func TestPostFilter(t *testing.T) {
 				frameworkruntime.WithPodNominator(testutil.NewPodNominator(informerFactory.Core().V1().Pods().Lister())),
 				frameworkruntime.WithSnapshotSharedLister(testutil.NewFakeSharedLister(tt.existPods, tt.nodes)),
 				frameworkruntime.WithWaitingPods(frameworkruntime.NewWaitingPodsMap()),
+				frameworkruntime.WithPodsInPreBind(frameworkruntime.NewPodsInPreBindMap()),
 			)
 			if err != nil {
 				t.Fatal(err)
@@ -764,7 +765,7 @@ func TestDryRunPreemption(t *testing.T) {
 					fh:    fwk,
 					state: state,
 				},
-				false, // enableAsyncPreemption
+				preemption.NewExecutor(fwk, plfeature.Features{}), // no feature enabled, i.e. preemption is synchronous
 			)
 
 			nodeInfos, _ := fwk.SnapshotSharedLister().NodeInfos().List()

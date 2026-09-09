@@ -96,6 +96,10 @@ func (f *fakeSharedLister) StorageInfos() fwk.StorageInfoLister {
 	return nil
 }
 
+func (f *fakeSharedLister) PodGroupStates() fwk.PodGroupStateLister {
+	return nil
+}
+
 func (f *fakeSharedLister) List() ([]fwk.NodeInfo, error) {
 	return f.nodeInfos, nil
 }

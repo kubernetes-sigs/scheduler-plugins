@@ -40,6 +40,7 @@ import (
 	podutil "k8s.io/kubernetes/pkg/api/v1/pod"
 	schedulerapisconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	"k8s.io/kubernetes/pkg/scheduler/apis/config/validation"
+	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/feature"
 	"k8s.io/kubernetes/pkg/scheduler/framework/preemption"
 	"k8s.io/kubernetes/pkg/scheduler/metrics"
 	"k8s.io/kubernetes/pkg/scheduler/util"
@@ -114,7 +115,7 @@ func (pl *PreemptionToleration) PostFilter(ctx context.Context, state fwk.CycleS
 		pl.Name(),
 		pl.fh,
 		pl,
-		false, // enableAsyncPreemption
+		preemption.NewExecutor(pl.fh, feature.Features{}), // no feature enabled, i.e. preemption is synchronous
 	)
 
 	pl.curTime = pl.clock.Now()
@@ -229,9 +230,14 @@ func (pl *PreemptionToleration) SelectVictimsOnNode(
 
 		if !exempted {
 			potentialVictims = append(potentialVictims, pi)
-			if err := removePod(pi); err != nil {
-				return nil, 0, fwk.AsStatus(err)
-			}
+		}
+	}
+
+	// Remove the victims only once the loop above is done: removePod mutates the
+	// very slice that nodeInfo.GetPods() returns.
+	for _, pi := range potentialVictims {
+		if err := removePod(pi); err != nil {
+			return nil, 0, fwk.AsStatus(err)
 		}
 	}
 
