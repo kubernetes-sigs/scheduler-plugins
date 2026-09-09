@@ -256,7 +256,7 @@ func TestTopologyMatchPreemption(t *testing.T) {
 				extTestCtx.cli.CoreV1().Pods(ns).Delete(context.TODO(), victimPodName, metav1.DeleteOptions{})
 			}()
 
-			if err := wait.PollUntilContextTimeout(testCtx.Ctx, 1*time.Second, 30*time.Second, false, func(ctx context.Context) (bool, error) {
+			if err := wait.PollUntilContextTimeout(testCtx.Ctx, 200*time.Millisecond, 30*time.Second, true, func(ctx context.Context) (bool, error) {
 				return podScheduled(t, extTestCtx.cli, ns, victimPodName), nil
 			}); err != nil {
 				t.Fatalf("victim pod %q failed to be scheduled: %v", victimPodName, err)
@@ -310,7 +310,7 @@ func TestTopologyMatchPreemption(t *testing.T) {
 			if tc.expectedEviction {
 				const timeout = 5 * time.Minute
 				nrtFreed := false
-				if err := wait.PollUntilContextTimeout(testCtx.Ctx, 10*time.Second, timeout, true, func(ctx context.Context) (bool, error) {
+				if err := wait.PollUntilContextTimeout(testCtx.Ctx, 250*time.Millisecond, timeout, true, func(ctx context.Context) (bool, error) {
 					t.Logf("waiting for preemptor to be scheduled and victim to be evicted...")
 					preemptorScheduled := podScheduled(t, extTestCtx.cli, ns, preemptorPodName)
 					victimGone := testutil.PodNotExist(extTestCtx.cli, ns, victimPodName)
