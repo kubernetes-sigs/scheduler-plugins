@@ -59,12 +59,8 @@ func (f *fakeFilterCache) UnreserveNodeResources(string, *v1.Pod) {}
 func (f *fakeFilterCache) PostBind(string, *v1.Pod)               {}
 func (f *fakeFilterCache) Close()                                 {}
 
-func makeGuaranteedPod(namespace, name, containerName string, cpu int64, memory string) *v1.Pod {
-	req := v1.ResourceList{
-		v1.ResourceCPU:    *resource.NewQuantity(cpu, resource.DecimalSI),
-		v1.ResourceMemory: resource.MustParse(memory),
-	}
-	return &v1.Pod{
+func makePodWithQoS(namespace, name, containerName string, qos v1.PodQOSClass, cpu int64, memory string) *v1.Pod {
+	p := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace,
 			Name:      name,
@@ -72,13 +68,37 @@ func makeGuaranteedPod(namespace, name, containerName string, cpu int64, memory 
 		Spec: v1.PodSpec{
 			Containers: []v1.Container{{
 				Name: containerName,
-				Resources: v1.ResourceRequirements{
-					Requests: req,
-					Limits:   req,
-				},
 			}},
 		},
 	}
+	if qos == v1.PodQOSBestEffort {
+		return p
+	}
+
+	req := v1.ResourceList{
+		v1.ResourceCPU:    *resource.NewQuantity(cpu, resource.DecimalSI),
+		v1.ResourceMemory: resource.MustParse(memory),
+	}
+	switch qos {
+	case v1.PodQOSGuaranteed:
+		p.Spec.Containers[0].Resources = v1.ResourceRequirements{
+			Requests: req,
+			Limits:   req,
+		}
+	case v1.PodQOSBurstable:
+		p.Spec.Containers[0].Resources = v1.ResourceRequirements{
+			Requests: req,
+		}
+	}
+	return p
+}
+
+func makeBestEffortPod(namespace, name, containerName string) *v1.Pod {
+	return makePodWithQoS(namespace, name, containerName, v1.PodQOSBestEffort, 0, "0")
+}
+
+func makeGuaranteedPod(namespace, name, containerName string, cpu int64, memory string) *v1.Pod {
+	return makePodWithQoS(namespace, name, containerName, v1.PodQOSGuaranteed, cpu, memory)
 }
 
 func makeTopologyResInfoWithAllocatable(name, capacity, available string) topologyv1alpha2.ResourceInfo {
@@ -266,11 +286,33 @@ func TestFilter_PreemptionFlow(t *testing.T) {
 
 		tooLarge := makeGuaranteedPod("default", "preemptor", containerName, 4, "1Gi")
 		status := tm.Filter(context.Background(), cycleState, tooLarge, nodeInfo)
-		if !quasiEqualStatus(status, fwk.NewStatus(fwk.Unschedulable, "eviction simulation in NRT is not possible:invalid NUMA mapping")) {
+		if !quasiEqualStatus(status, fwk.NewStatus(fwk.Unschedulable, "eviction simulation in NRT is not possible: missing NUMA mapping")) {
 			t.Fatalf("expected unschedulable preemptor, got %v", status)
 		}
 		if len(cache.maybeOverReserved) == 0 || cache.maybeOverReserved[0] != nodeName {
 			t.Fatalf("preemption flow must mark node over-reserved on failure, got %v", cache.maybeOverReserved)
+		}
+	})
+
+	t.Run("preemption with mixed victims fails eviction simulation and triggers resync", func(t *testing.T) {
+		nonExclusive0 := makeBestEffortPod("default", "non-exclusive-0", containerName)
+		nonExclusive1 := makeBestEffortPod("default", "non-exclusive-1", containerName)
+		// exclusive victim is not present in numa placement info, so eviction simulation fails
+		exclusiveVictim := makeGuaranteedPod("default", "exclusive-victim", containerName, 4, "1Gi")
+		// placement info for a different pod on the node satisfies the preemption gate on line 213
+		placedPod := makeGuaranteedPod("default", "placed-pod", containerName, 2, "512Mi")
+		placementForOtherPod := makeEncodedInfoForPod(placedPod, 0)
+
+		cache := &fakeFilterCache{nrt: nrt, numaPlacement: placementForOtherPod}
+		tm := TopologyMatch{nrtCache: cache, preemptionMode: apiconfig.PreemptionEnabled}
+		cycleState := cycleStateWithVictims(t, nonExclusive0, nonExclusive1, exclusiveVictim)
+
+		status := tm.Filter(context.Background(), cycleState, preemptor, nodeInfo)
+		if !quasiEqualStatus(status, fwk.NewStatus(fwk.Unschedulable, "eviction simulation in NRT is not possible: missing NUMA mapping")) {
+			t.Fatalf("expected unschedulable preemptor, got %v", status)
+		}
+		if len(cache.maybeOverReserved) != 1 || cache.maybeOverReserved[0] != nodeName {
+			t.Fatalf("preemption flow must mark node over-reserved on eviction simulation failure, got %v", cache.maybeOverReserved)
 		}
 	})
 

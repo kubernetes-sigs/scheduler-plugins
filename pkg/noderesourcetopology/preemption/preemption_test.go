@@ -306,10 +306,10 @@ func TestGetNRTPostPodsEviction(t *testing.T) {
 			},
 			numaPlacementInfo:  getTestEncodedInfo10Containers(),
 			expectedUpdatedNRT: getTestNRT(),
-			expectedError:      "invalid NUMA mapping",
+			expectedError:      "missing NUMA mapping",
 		},
 		{
-			name: "mixed victims with non-exclusive pods and exclusive pod with invalid NUMA mapping",
+			name: "mixed victims with non-exclusive pods and exclusive pod with missing NUMA mapping",
 			nrt:  getTestNRT(),
 			victims: []corev1.Pod{
 				{
@@ -366,7 +366,7 @@ func TestGetNRTPostPodsEviction(t *testing.T) {
 			},
 			numaPlacementInfo:  getTestEncodedInfo10Containers(),
 			expectedUpdatedNRT: getTestNRT(),
-			expectedError:      "invalid NUMA mapping",
+			expectedError:      "missing NUMA mapping",
 		},
 		{
 			name: "resources release exceeds allocatable",

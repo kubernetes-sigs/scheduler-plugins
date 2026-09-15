@@ -213,7 +213,9 @@ func (tm *TopologyMatch) Filter(ctx context.Context, cycleState fwk.CycleState, 
 		if numaPlacementInfo != nil && numaPlacementInfo.Containers() != 0 {
 			nodeTopology, err = preemption.GetNRTPostPodsEviction(lh, nodeTopology.DeepCopy(), victims, numaPlacementInfo)
 			if err != nil {
-				return fwk.NewStatus(fwk.Unschedulable, "eviction simulation in NRT is not possible:"+err.Error())
+				// valid NUMA placement info aligns with having a fresh PFP hence use OverReserved signal to resync with the PFP gate
+				tm.nrtCache.NodeMaybeOverReserved(nodeName, pod)
+				return fwk.NewStatus(fwk.Unschedulable, "eviction simulation in NRT is not possible: "+err.Error())
 			}
 			lh.V(4).Info("running with NRT modified by eviction simulation")
 		}
