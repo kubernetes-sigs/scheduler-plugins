@@ -40,19 +40,19 @@ import (
 // eviction simulation cannot be performed.
 func GetNRTPostPodsEviction(lh logr.Logger, nrt *topologyv1alpha2.NodeResourceTopology, victims []corev1.Pod, numaPlacementInfo *numaplacement.EncodedInfo) (*topologyv1alpha2.NodeResourceTopology, error) {
 	if nrt == nil {
-		return nil, fmt.Errorf("NRT not found, cannot process eviction simulation")
+		return nil, fmt.Errorf("NRT not found")
 	}
 
 	if len(victims) == 0 {
-		return nrt, fmt.Errorf("no victims found, cannot process eviction simulation")
+		return nrt, fmt.Errorf("no victims found")
 	}
 
 	if numaPlacementInfo == nil {
-		return nrt, fmt.Errorf("numa placement info not found, cannot process eviction simulation")
+		return nrt, fmt.Errorf("numa placement info not found")
 	}
 
 	if numaPlacementInfo.Containers() == 0 {
-		return nrt, fmt.Errorf("no containers found in numa placement info, cannot process eviction simulation")
+		return nrt, fmt.Errorf("zero containers in numa placement info")
 	}
 
 	nrtResources := cache.ResourceNamesFromNRT(nrt)
@@ -61,7 +61,7 @@ func GetNRTPostPodsEviction(lh logr.Logger, nrt *topologyv1alpha2.NodeResourceTo
 		return nrt, err
 	}
 	if len(numaToResourcesToAdd) == 0 {
-		return nrt, fmt.Errorf("no resources to add, cannot process eviction simulation")
+		return nrt, fmt.Errorf("zero resources to add back")
 	}
 	return addResourcesToNodeResourcesTopology(lh, nrt, numaToResourcesToAdd)
 }

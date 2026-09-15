@@ -45,7 +45,7 @@ func TestGetNRTPostPodsEviction(t *testing.T) {
 			victims:            []corev1.Pod{},
 			expectedUpdatedNRT: getTestNRT(),
 			numaPlacementInfo:  getTestEncodedInfo10Containers(),
-			expectedError:      "no victims found, cannot process eviction simulation",
+			expectedError:      "no victims found",
 		},
 		{
 			name: "empty numa placement info with victims",
@@ -75,7 +75,7 @@ func TestGetNRTPostPodsEviction(t *testing.T) {
 				},
 			},
 			expectedUpdatedNRT: getTestNRT(),
-			expectedError:      "numa placement info not found, cannot process eviction simulation",
+			expectedError:      "numa placement info not found",
 		},
 		{
 			name: "victims with non-exclusive resources",
@@ -99,7 +99,7 @@ func TestGetNRTPostPodsEviction(t *testing.T) {
 			},
 			numaPlacementInfo:  getTestEncodedInfo10Containers(),
 			expectedUpdatedNRT: getTestNRT(),
-			expectedError:      "no resources to add, cannot process eviction simulation",
+			expectedError:      "zero resources to add back",
 		},
 		{
 			name: "mixed victims with exclusive resources",
@@ -412,7 +412,7 @@ func TestGetNRTPostPodsEviction(t *testing.T) {
 				},
 			},
 			expectedUpdatedNRT: getTestNRT(),
-			expectedError:      "no containers found in numa placement info, cannot process eviction simulation",
+			expectedError:      "zero containers in numa placement info",
 		},
 		{
 			name: "victim with restartable init container exclusive resources",
