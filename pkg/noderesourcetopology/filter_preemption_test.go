@@ -294,6 +294,25 @@ func TestFilter_PreemptionFlow(t *testing.T) {
 		}
 	})
 
+	t.Run("preemption with only non-exclusive victims continues filtering without resync", func(t *testing.T) {
+		nonExclusive0 := makeBestEffortPod("default", "non-exclusive-0", containerName)
+		nonExclusive1 := makeBestEffortPod("default", "non-exclusive-1", containerName)
+		placedPod := makeGuaranteedPod("default", "placed-pod", containerName, 2, "512Mi")
+		placementForOtherPod := makeEncodedInfoForPod(placedPod, 0)
+
+		cache := &fakeFilterCache{nrt: nrt, numaPlacement: placementForOtherPod}
+		tm := TopologyMatch{nrtCache: cache, preemptionMode: apiconfig.PreemptionEnabled}
+		cycleState := cycleStateWithVictims(t, nonExclusive0, nonExclusive1)
+
+		status := tm.Filter(context.Background(), cycleState, preemptor, nodeInfo)
+		if !quasiEqualStatus(status, fwk.NewStatus(fwk.Unschedulable, "cannot align container")) {
+			t.Fatalf("expected unschedulable preemptor, got %v", status)
+		}
+		if len(cache.maybeOverReserved) != 0 {
+			t.Fatalf("preemption with only non-exclusive victims must not mark node over-reserved, got %v", cache.maybeOverReserved)
+		}
+	})
+
 	t.Run("preemption with mixed victims fails eviction simulation and triggers resync", func(t *testing.T) {
 		nonExclusive0 := makeBestEffortPod("default", "non-exclusive-0", containerName)
 		nonExclusive1 := makeBestEffortPod("default", "non-exclusive-1", containerName)

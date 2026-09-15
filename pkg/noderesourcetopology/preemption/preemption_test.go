@@ -99,7 +99,6 @@ func TestGetNRTPostPodsEviction(t *testing.T) {
 			},
 			numaPlacementInfo:  getTestEncodedInfo10Containers(),
 			expectedUpdatedNRT: getTestNRT(),
-			expectedError:      "zero resources to add back",
 		},
 		{
 			name: "mixed victims with exclusive resources",

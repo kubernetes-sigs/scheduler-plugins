@@ -61,7 +61,7 @@ func GetNRTPostPodsEviction(lh logr.Logger, nrt *topologyv1alpha2.NodeResourceTo
 		return nrt, err
 	}
 	if len(numaToResourcesToAdd) == 0 {
-		return nrt, fmt.Errorf("zero resources to add back")
+		return nrt, nil
 	}
 	return addResourcesToNodeResourcesTopology(lh, nrt, numaToResourcesToAdd)
 }
