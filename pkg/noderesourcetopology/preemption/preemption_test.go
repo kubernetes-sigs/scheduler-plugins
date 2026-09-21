@@ -45,7 +45,7 @@ func TestGetNRTPostPodsEviction(t *testing.T) {
 			victims:            []corev1.Pod{},
 			expectedUpdatedNRT: getTestNRT(),
 			numaPlacementInfo:  getTestEncodedInfo10Containers(),
-			expectedError:      "no victims found, cannot process eviction simulation",
+			expectedError:      "no victims found",
 		},
 		{
 			name: "empty numa placement info with victims",
@@ -75,7 +75,7 @@ func TestGetNRTPostPodsEviction(t *testing.T) {
 				},
 			},
 			expectedUpdatedNRT: getTestNRT(),
-			expectedError:      "numa placement info not found, cannot process eviction simulation",
+			expectedError:      "numa placement info not found",
 		},
 		{
 			name: "victims with non-exclusive resources",
@@ -99,7 +99,6 @@ func TestGetNRTPostPodsEviction(t *testing.T) {
 			},
 			numaPlacementInfo:  getTestEncodedInfo10Containers(),
 			expectedUpdatedNRT: getTestNRT(),
-			expectedError:      "no resources to add, cannot process eviction simulation",
 		},
 		{
 			name: "mixed victims with exclusive resources",
@@ -306,7 +305,67 @@ func TestGetNRTPostPodsEviction(t *testing.T) {
 			},
 			numaPlacementInfo:  getTestEncodedInfo10Containers(),
 			expectedUpdatedNRT: getTestNRT(),
-			expectedError:      "no resources to add, cannot process eviction simulation",
+			expectedError:      "missing NUMA mapping",
+		},
+		{
+			name: "mixed victims with non-exclusive pods and exclusive pod with missing NUMA mapping",
+			nrt:  getTestNRT(),
+			victims: []corev1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "non-exclusive-0",
+						Namespace: "ns-a",
+					},
+					Status: corev1.PodStatus{
+						QOSClass: corev1.PodQOSBestEffort,
+					},
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{Name: "container-0"},
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "non-exclusive-1",
+						Namespace: "ns-a",
+					},
+					Status: corev1.PodStatus{
+						QOSClass: corev1.PodQOSBestEffort,
+					},
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{Name: "container-0"},
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "newpod",
+						Namespace: "ns-a",
+					},
+					Status: corev1.PodStatus{
+						QOSClass: corev1.PodQOSGuaranteed,
+					},
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{
+								Name: "cnt-0",
+								Resources: corev1.ResourceRequirements{
+									Requests: corev1.ResourceList{
+										"cpu":                        resource.MustParse("1"),
+										"memory":                     resource.MustParse("100Mi"),
+										"example-device.com/deviceA": resource.MustParse("1"),
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			numaPlacementInfo:  getTestEncodedInfo10Containers(),
+			expectedUpdatedNRT: getTestNRT(),
+			expectedError:      "missing NUMA mapping",
 		},
 		{
 			name: "resources release exceeds allocatable",
@@ -352,7 +411,7 @@ func TestGetNRTPostPodsEviction(t *testing.T) {
 				},
 			},
 			expectedUpdatedNRT: getTestNRT(),
-			expectedError:      "no containers found in numa placement info, cannot process eviction simulation",
+			expectedError:      "zero containers in numa placement info",
 		},
 		{
 			name: "victim with restartable init container exclusive resources",

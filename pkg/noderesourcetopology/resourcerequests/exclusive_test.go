@@ -172,6 +172,157 @@ func TestAreExclusiveForPodNRTScoped(t *testing.T) {
 	}
 }
 
+func TestGetExclusive(t *testing.T) {
+	fpga := corev1.ResourceName("veryfast.io/fpga")
+	nrtWithFPGA := sets.New(fpga, corev1.ResourceCPU, corev1.ResourceMemory)
+
+	tests := []struct {
+		name         string
+		qos          corev1.PodQOSClass
+		container    corev1.Container
+		nrtResources sets.Set[corev1.ResourceName]
+		expected     corev1.ResourceList
+	}{
+		{
+			name:         "empty requests",
+			qos:          corev1.PodQOSGuaranteed,
+			container:    corev1.Container{Name: "cnt"},
+			nrtResources: nrtWithFPGA,
+			expected:     corev1.ResourceList{},
+		},
+		{
+			name: "guaranteed integral cpu and memory",
+			qos:  corev1.PodQOSGuaranteed,
+			container: corev1.Container{
+				Name: "cnt",
+				Resources: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("4"),
+						corev1.ResourceMemory: resource.MustParse("2Gi"),
+					},
+				},
+			},
+			nrtResources: nrtWithFPGA,
+			expected: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("4"),
+				corev1.ResourceMemory: resource.MustParse("2Gi"),
+			},
+		},
+		{
+			name: "guaranteed fractional cpu excluded",
+			qos:  corev1.PodQOSGuaranteed,
+			container: corev1.Container{
+				Name: "cnt",
+				Resources: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("500m"),
+						corev1.ResourceMemory: resource.MustParse("128Mi"),
+					},
+				},
+			},
+			nrtResources: nrtWithFPGA,
+			expected: corev1.ResourceList{
+				corev1.ResourceMemory: resource.MustParse("128Mi"),
+			},
+		},
+		{
+			name: "burstable native resources excluded",
+			qos:  corev1.PodQOSBurstable,
+			container: corev1.Container{
+				Name: "cnt",
+				Resources: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("4"),
+						corev1.ResourceMemory: resource.MustParse("2Gi"),
+					},
+				},
+			},
+			nrtResources: nrtWithFPGA,
+			expected:     corev1.ResourceList{},
+		},
+		{
+			name: "device in nrt is exclusive for any qos",
+			qos:  corev1.PodQOSBurstable,
+			container: corev1.Container{
+				Name: "cnt",
+				Resources: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						fpga: resource.MustParse("1"),
+					},
+				},
+			},
+			nrtResources: nrtWithFPGA,
+			expected: corev1.ResourceList{
+				fpga: resource.MustParse("1"),
+			},
+		},
+		{
+			name: "device not in nrt is excluded",
+			qos:  corev1.PodQOSGuaranteed,
+			container: corev1.Container{
+				Name: "cnt",
+				Resources: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						fpga: resource.MustParse("1"),
+					},
+				},
+			},
+			nrtResources: sets.New(corev1.ResourceCPU, corev1.ResourceMemory),
+			expected:     corev1.ResourceList{},
+		},
+		{
+			name: "mixed requests return only exclusive subset",
+			qos:  corev1.PodQOSGuaranteed,
+			container: corev1.Container{
+				Name: "cnt",
+				Resources: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("250m"),
+						corev1.ResourceMemory: resource.MustParse("1Gi"),
+						fpga:                  resource.MustParse("2"),
+					},
+				},
+			},
+			nrtResources: nrtWithFPGA,
+			expected: corev1.ResourceList{
+				corev1.ResourceMemory: resource.MustParse("1Gi"),
+				fpga:                  resource.MustParse("2"),
+			},
+		},
+		{
+			name: "hugepages are exclusive for guaranteed pods",
+			qos:  corev1.PodQOSGuaranteed,
+			container: corev1.Container{
+				Name: "cnt",
+				Resources: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceName("hugepages-2Mi"): resource.MustParse("64Mi"),
+					},
+				},
+			},
+			nrtResources: sets.New(corev1.ResourceName("hugepages-2Mi")),
+			expected: corev1.ResourceList{
+				corev1.ResourceName("hugepages-2Mi"): resource.MustParse("64Mi"),
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := GetExclusive(tt.qos, tt.container, tt.nrtResources)
+			if len(got) != len(tt.expected) {
+				t.Fatalf("mismatching number of resources; got\n%v\nexpected\n%v", got, tt.expected)
+			}
+			for name, qty := range got {
+				other, ok := tt.expected[name]
+				if !ok || qty.Cmp(other) != 0 {
+					t.Fatalf("mismatching resource quantity; got\n%v\nexpected\n%v", got, tt.expected)
+				}
+			}
+		})
+	}
+}
+
 func coreTestCases() []testCase {
 	return []testCase{
 		{

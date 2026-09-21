@@ -100,3 +100,14 @@ func IsExclusive(qos corev1.PodQOSClass, resource corev1.ResourceName, quantity 
 	}
 	return false
 }
+
+func GetExclusive(qos corev1.PodQOSClass, container corev1.Container, nrtResources sets.Set[corev1.ResourceName]) corev1.ResourceList {
+	relRes := corev1.ResourceList{}
+	for resName, resQty := range container.Resources.Requests {
+		if !IsExclusive(qos, resName, resQty, nrtResources) {
+			continue
+		}
+		relRes[resName] = resQty
+	}
+	return relRes
+}
