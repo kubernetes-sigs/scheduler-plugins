@@ -1163,3 +1163,16 @@ func (fpl *fakePodLister) List(lh logr.Logger, selector labels.Selector) ([]*cor
 	return ret, fpl.err
 }
 
+func (fpl *fakePodLister) ListByNode(lh logr.Logger, nodeName string) ([]*corev1.Pod, error) {
+	pods, err := fpl.List(lh, labels.Everything())
+	if err != nil {
+		return nil, err
+	}
+	var ret []*corev1.Pod
+	for _, pod := range pods {
+		if pod.Spec.NodeName == nodeName {
+			ret = append(ret, pod)
+		}
+	}
+	return ret, nil
+}
