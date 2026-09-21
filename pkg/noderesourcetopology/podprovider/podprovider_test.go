@@ -26,6 +26,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	podlisterv1 "k8s.io/client-go/listers/core/v1"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/utils/ptr"
 
 	apiconfig "sigs.k8s.io/scheduler-plugins/apis/config"
@@ -67,6 +68,23 @@ func podNames(pods []*corev1.Pod) []string {
 	return names
 }
 
+func newIndexedFilteredLister(t *testing.T, pods []*corev1.Pod, filter PodFilterFunc) *filteredLister {
+	t.Helper()
+	indexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{
+		PodNodeNameIndex: PodNodeNameIndexFunc,
+	})
+	for _, pod := range pods {
+		if err := indexer.Add(pod); err != nil {
+			t.Fatalf("indexer.Add(%s): %v", pod.Name, err)
+		}
+	}
+	return &filteredLister{
+		lister:  podlisterv1.NewPodLister(indexer),
+		indexer: indexer,
+		filter:  filter,
+	}
+}
+
 func TestFilteredListerList(t *testing.T) {
 	allPods := []*corev1.Pod{
 		makePod("running", corev1.PodRunning, "node1"),
@@ -78,12 +96,12 @@ func TestFilteredListerList(t *testing.T) {
 	}
 
 	tcases := []struct {
-		description  string
-		filter       PodFilterFunc
-		pods         []*corev1.Pod
-		listerErr    error
-		expected     []string
-		expectedErr  error
+		description string
+		filter      PodFilterFunc
+		pods        []*corev1.Pod
+		listerErr   error
+		expected    []string
+		expectedErr error
 	}{
 		{
 			description: "shared keeps only Running",
@@ -147,6 +165,75 @@ func TestFilteredListerList(t *testing.T) {
 				}
 				return
 			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if diff := cmp.Diff(tcase.expected, podNames(got)); diff != "" {
+				t.Errorf("unexpected pods (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestFilteredListerListByNode(t *testing.T) {
+	allPods := []*corev1.Pod{
+		makePod("n1-running", corev1.PodRunning, "node1"),
+		makePod("n1-succeeded", corev1.PodSucceeded, "node1"),
+		makePod("n1-failed", corev1.PodFailed, "node1"),
+		makePod("n1-pending", corev1.PodPending, "node1"),
+		makePod("n2-running", corev1.PodRunning, "node2"),
+		makePod("n2-succeeded", corev1.PodSucceeded, "node2"),
+		makePod("unbound-running", corev1.PodRunning, ""),
+	}
+
+	tcases := []struct {
+		description string
+		filter      PodFilterFunc
+		nodeName    string
+		expected    []string
+	}{
+		{
+			description: "shared returns only Running pods on node1",
+			filter:      IsPodRelevantShared,
+			nodeName:    "node1",
+			expected:    []string{"n1-running"},
+		},
+		{
+			description: "shared returns only Running pods on node2",
+			filter:      IsPodRelevantShared,
+			nodeName:    "node2",
+			expected:    []string{"n2-running"},
+		},
+		{
+			description: "dedicated keeps terminal phases on node1",
+			filter:      IsPodRelevantDedicated,
+			nodeName:    "node1",
+			expected:    []string{"n1-running", "n1-succeeded", "n1-failed"},
+		},
+		{
+			description: "dedicated keeps terminal phases on node2",
+			filter:      IsPodRelevantDedicated,
+			nodeName:    "node2",
+			expected:    []string{"n2-running", "n2-succeeded"},
+		},
+		{
+			description: "unknown node returns empty",
+			filter:      IsPodRelevantShared,
+			nodeName:    "node-missing",
+			expected:    []string{},
+		},
+		{
+			description: "empty node name returns empty (unbound not indexed)",
+			filter:      IsPodRelevantShared,
+			nodeName:    "",
+			expected:    []string{},
+		},
+	}
+
+	for _, tcase := range tcases {
+		t.Run(tcase.description, func(t *testing.T) {
+			fl := newIndexedFilteredLister(t, allPods, tcase.filter)
+			got, err := fl.ListByNode(testr.New(t), tcase.nodeName)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
