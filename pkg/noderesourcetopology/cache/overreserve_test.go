@@ -1316,7 +1316,7 @@ func TestMakeNodeToPodDataMap(t *testing.T) {
 				filter: tcase.isPodRelevant,
 			}
 			nrtResourcesLookup := func(nodeName string) sets.Set[corev1.ResourceName] { return nil }
-			got, err := makeNodeToPodDataMap(testr.New(t), podLister, nrtResourcesLookup, apiconfig.PreemptionDisabled)
+			got, err := makeNodeToPodDataMap(testr.New(t), podLister, nodeNamesFromPods(tcase.pods), nrtResourcesLookup, apiconfig.PreemptionDisabled)
 			if err != tcase.expectedErr {
 				t.Errorf("error mismatch: got %v expected %v", err, tcase.expectedErr)
 			}
@@ -1561,7 +1561,7 @@ func TestMakeNodeToPodDataMapWithExclusiveResources(t *testing.T) {
 				filter: tcase.isPodRelevant,
 			}
 			nrtResourcesLookup := func(nodeName string) sets.Set[corev1.ResourceName] { return nil }
-			got, err := makeNodeToPodDataMap(testr.New(t), podLister, nrtResourcesLookup, tcase.preemptionMode)
+			got, err := makeNodeToPodDataMap(testr.New(t), podLister, nodeNamesFromPods(tcase.pods), nrtResourcesLookup, tcase.preemptionMode)
 			if err != tcase.expectedErr {
 				t.Errorf("error mismatch: got %v expected %v", err, tcase.expectedErr)
 			}
@@ -1619,4 +1619,14 @@ func TestOverresevedGetCachedNRTCopyWithForeignPods(t *testing.T) {
 	if gotInfo.Fresh {
 		t.Errorf("cached data reported fresh when node has foreign pods")
 	}
+}
+
+func nodeNamesFromPods(pods []*corev1.Pod) []string {
+	names := sets.New[string]()
+	for _, pod := range pods {
+		if pod.Spec.NodeName != "" {
+			names.Insert(pod.Spec.NodeName)
+		}
+	}
+	return names.UnsortedList()
 }
