@@ -22,6 +22,7 @@ import (
 
 	"github.com/go-logr/logr/testr"
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -237,7 +238,8 @@ func TestFilteredListerListByNode(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if diff := cmp.Diff(tcase.expected, podNames(got)); diff != "" {
+			// Indexer iteration order is not guaranteed.
+			if diff := cmp.Diff(tcase.expected, podNames(got), cmpopts.SortSlices(func(a, b string) bool { return a < b })); diff != "" {
 				t.Errorf("unexpected pods (-want +got):\n%s", diff)
 			}
 		})
