@@ -199,6 +199,10 @@ func (tm *TopologyMatch) Filter(ctx context.Context, cycleState fwk.CycleState, 
 		return fwk.NewStatus(fwk.Unschedulable, "invalid node topology data")
 	}
 	if nodeTopology == nil {
+		if tm.rejectWithoutNRT {
+			lh.V(2).Info("rejecting node without topology data")
+			return fwk.NewStatus(fwk.Unschedulable, "node has no topology data")
+		}
 		return nil
 	}
 
