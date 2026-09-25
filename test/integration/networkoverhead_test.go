@@ -279,7 +279,7 @@ func TestNetworkOverheadPlugin(t *testing.T) {
 			for _, p := range tt.pods {
 				if len(tt.expectedNodes) > 0 {
 					// Wait for the pod to be scheduled.
-					if err := wait.PollUntilContextTimeout(testCtx.Ctx, 1*time.Second, 20*time.Second, false, func(ctx context.Context) (bool, error) {
+					if err := wait.PollUntilContextTimeout(testCtx.Ctx, 200*time.Millisecond, 20*time.Second, true, func(ctx context.Context) (bool, error) {
 						return podScheduled(t, cs, ns, p.Name), nil
 
 					}); err != nil {

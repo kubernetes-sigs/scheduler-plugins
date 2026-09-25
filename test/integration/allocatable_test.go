@@ -175,7 +175,7 @@ func TestAllocatablePlugin(t *testing.T) {
 			defer cleanupPods(t, testCtx, tc.pods)
 
 			for _, pod := range tc.pods {
-				err := wait.PollUntilContextTimeout(testCtx.Ctx, 1*time.Second, 60*time.Second, false, func(ctx context.Context) (bool, error) {
+				err := wait.PollUntilContextTimeout(testCtx.Ctx, 200*time.Millisecond, 60*time.Second, true, func(ctx context.Context) (bool, error) {
 					return podScheduled(t, cs, pod.Namespace, pod.Name), nil
 				})
 				if err != nil {

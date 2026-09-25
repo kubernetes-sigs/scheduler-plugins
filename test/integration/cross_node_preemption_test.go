@@ -113,7 +113,7 @@ func TestCrossNodePreemptionPlugin(t *testing.T) {
 				t.Fatalf("failed to create preemptor Pod %q: %v", tt.pod.Name, err)
 			}
 			// Ensure the preemtor Pod is scheduled successfully.
-			if err := wait.Poll(1*time.Second, 60*time.Second, func() (bool, error) {
+			if err := wait.Poll(200*time.Millisecond, 60*time.Second, func() (bool, error) {
 				return podScheduled(cs, ns, tt.pod.Name), nil
 			}); err != nil {
 				t.Errorf("preemptor pod %q failed to be scheduled: %v", tt.pod.Name, err)
@@ -121,7 +121,7 @@ func TestCrossNodePreemptionPlugin(t *testing.T) {
 
 			// Lastly, existing Pods are expected to be preempted.
 			for _, pod := range tt.pods {
-				if err := wait.Poll(1*time.Second, 30*time.Second, func() (bool, error) {
+				if err := wait.Poll(200*time.Millisecond, 30*time.Second, func() (bool, error) {
 					return podNotExist(cs, ns, pod.Name), nil
 				}); err != nil {
 					t.Errorf("preemptor pod %q failed to be scheduled: %v", tt.pod.Name, err)

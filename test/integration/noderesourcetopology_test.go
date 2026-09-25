@@ -2056,7 +2056,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 			for _, p := range tt.pods {
 				if len(tt.expectedNodes) > 0 {
 					// Wait for the pod to be scheduled.
-					if err := wait.PollUntilContextTimeout(testCtx.Ctx, 1*time.Second, 20*time.Second, false, func(ctx context.Context) (bool, error) {
+					if err := wait.PollUntilContextTimeout(testCtx.Ctx, 200*time.Millisecond, 20*time.Second, true, func(ctx context.Context) (bool, error) {
 						return podScheduled(t, cs, ns, p.Name), nil
 
 					}); err != nil {
@@ -2080,7 +2080,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 					// wait for the pod scheduling to failed.
 					var err error
 					var events []v1.Event
-					if err := wait.PollUntilContextTimeout(testCtx.Ctx, 5*time.Second, 20*time.Second, false, func(ctx context.Context) (bool, error) {
+					if err := wait.PollUntilContextTimeout(testCtx.Ctx, 200*time.Millisecond, 20*time.Second, true, func(ctx context.Context) (bool, error) {
 						events, err = getPodEvents(cs, ns, p.Name)
 						if err != nil {
 							// This could be a connection error, so we want to retry.
