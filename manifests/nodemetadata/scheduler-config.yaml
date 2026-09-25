@@ -15,6 +15,8 @@ profiles:
           metadataSource: "Label"
           metadataType: "Number"
           scoringStrategy: "Highest"
+          # Missing labels are ranked as priority 100.
+          defaultValue: "100"
 
 ---
 apiVersion: kubescheduler.config.k8s.io/v1

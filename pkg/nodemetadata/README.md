@@ -22,6 +22,7 @@ The plugin accepts the following configuration parameters:
 | `metadataType` | string | Yes | Type of metadata value: `"Number"` or `"Timestamp"` |
 | `scoringStrategy` | string | Yes | How to score nodes (see below) |
 | `timestampFormat` | string | Conditional | Go time format string (required when `metadataType` is `"Timestamp"`) |
+| `defaultValue` | string | No | Value to score when a node is missing `metadataKey`; it must match `metadataType` |
 
 ### Scoring Strategies
 
@@ -34,6 +35,21 @@ The plugin accepts the following configuration parameters:
 
 - **`Newest`** - Nodes with newer (more recent) timestamps get higher scores
 - **`Oldest`** - Nodes with older timestamps get higher scores
+
+### Missing Metadata
+
+By default, nodes without `metadataKey` receive the lowest score. Set
+`defaultValue` to rank missing metadata alongside explicitly configured values.
+The value is parsed and scored exactly like a node value, including the selected
+strategy. For timestamps, provide a value matching `timestampFormat` (or
+RFC3339 when the format is omitted). Malformed node values always receive the
+lowest score; `defaultValue` does not mask them.
+
+For example, this treats an unlabeled node as priority `100`:
+
+```yaml
+defaultValue: "100"
+```
 
 ## Usage Examples
 

@@ -290,6 +290,44 @@ func TestValidateNodeMetadataArgs(t *testing.T) {
 			expectedErr: nil,
 		},
 		{
+			description: "correct default value",
+			args:        &config.NodeMetadataArgs{MetadataKey: "priority", MetadataSource: config.MetadataSourceLabel, MetadataType: config.MetadataTypeNumber, ScoringStrategy: config.ScoringStrategyHighest, DefaultValue: "100"},
+			expectedErr: nil,
+		},
+		{
+			description: "invalid numeric default value",
+			args:        &config.NodeMetadataArgs{MetadataKey: "priority", MetadataSource: config.MetadataSourceLabel, MetadataType: config.MetadataTypeNumber, ScoringStrategy: config.ScoringStrategyHighest, DefaultValue: "invalid"},
+			expectedErr: fmt.Errorf("defaultValue must be a valid number when metadataType is \"Number\""),
+		},
+		{
+			description: "invalid timestamp default value",
+			args:        &config.NodeMetadataArgs{MetadataKey: "lastUpdate", MetadataSource: config.MetadataSourceAnnotation, MetadataType: config.MetadataTypeTimestamp, ScoringStrategy: config.ScoringStrategyNewest, DefaultValue: "invalid"},
+			expectedErr: fmt.Errorf("defaultValue must match timestampFormat when metadataType is \"Timestamp\""),
+		},
+		{
+			description: "valid timestamp default value does not match timestamp format",
+			args: &config.NodeMetadataArgs{
+				MetadataKey:     "lastUpdate",
+				MetadataSource:  config.MetadataSourceAnnotation,
+				MetadataType:    config.MetadataTypeTimestamp,
+				ScoringStrategy: config.ScoringStrategyNewest,
+				TimestampFormat: "2006-01-02",
+				DefaultValue:    "2026-08-29T13:14:15Z",
+			},
+			expectedErr: fmt.Errorf("defaultValue must match timestampFormat when metadataType is \"Timestamp\""),
+		},
+		{
+			description: "timestamp format without Go reference time components",
+			args: &config.NodeMetadataArgs{
+				MetadataKey:     "lastUpdate",
+				MetadataSource:  config.MetadataSourceAnnotation,
+				MetadataType:    config.MetadataTypeTimestamp,
+				ScoringStrategy: config.ScoringStrategyNewest,
+				TimestampFormat: "YYYY-MM-DD",
+			},
+			expectedErr: fmt.Errorf("timestampFormat must be a valid Go time layout"),
+		},
+		{
 			description: "missing MetadataKey",
 			args: &config.NodeMetadataArgs{
 				MetadataKey:     "",
