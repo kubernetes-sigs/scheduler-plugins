@@ -27,9 +27,9 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	podlisterv1 "k8s.io/client-go/listers/core/v1"
 
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/podprovider"
 	tu "sigs.k8s.io/scheduler-plugins/test/util"
 )
 
@@ -146,7 +146,7 @@ type testCaseGetCachedNRTCopy struct {
 	expectedOK     bool
 }
 
-func checkGetCachedNRTCopy(t *testing.T, makeCache func(client ctrlclient.WithWatch, podLister podlisterv1.PodLister) (Interface, error), extraCases ...testCaseGetCachedNRTCopy) {
+func checkGetCachedNRTCopy(t *testing.T, makeCache func(client ctrlclient.WithWatch, podLister podprovider.Lister) (Interface, error), extraCases ...testCaseGetCachedNRTCopy) {
 	t.Helper()
 
 	testNodeName := "worker-node-1"

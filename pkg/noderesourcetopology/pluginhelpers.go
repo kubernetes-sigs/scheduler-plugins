@@ -60,9 +60,12 @@ func initNodeTopologyInformer(ctx context.Context, lh logr.Logger,
 		return nrtcache.NewPassthrough(lh.WithName(logging.SubsystemNRTCache), client), nil
 	}
 
-	podSharedInformer, podLister, isPodRelevant := podprovider.NewFromHandle(lh, handle, tcfg.Cache)
+	podSharedInformer, podLister, err := podprovider.NewFromHandle(lh, handle, tcfg.Cache)
+	if err != nil {
+		return nil, err
+	}
 
-	nrtCache, err := nrtcache.NewOverReserve(ctx, lh.WithName(logging.SubsystemNRTCache), tcfg.Cache, client, podLister, isPodRelevant, *tcfg.PreemptionMode)
+	nrtCache, err := nrtcache.NewOverReserve(ctx, lh.WithName(logging.SubsystemNRTCache), tcfg.Cache, client, podLister, *tcfg.PreemptionMode)
 	if err != nil {
 		return nil, err
 	}
