@@ -18,6 +18,7 @@ package cache
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"sort"
 	"testing"
@@ -33,7 +34,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/utils/ptr"
 
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -1080,24 +1080,23 @@ func TestOverReserveCloseStopsWatcher(t *testing.T) {
 	}
 }
 
-func TestMakeNodeToPodDataMap(t *testing.T) {
+func TestGetNodeData(t *testing.T) {
 	tcases := []struct {
 		description   string
 		pods          []*corev1.Pod
 		isPodRelevant podprovider.PodFilterFunc
 		err           error
-		expected      map[string][]podData
-		expectedErr   error
+		expectedPods  []podData
 	}{
 		{
 			description:   "empty pod list - shared",
 			isPodRelevant: podprovider.IsPodRelevantShared,
-			expected:      make(map[string][]podData),
+			expectedPods:  []podData{},
 		},
 		{
 			description:   "empty pod list - dedicated",
 			isPodRelevant: podprovider.IsPodRelevantDedicated,
-			expected:      make(map[string][]podData),
+			expectedPods:  []podData{},
 		},
 		{
 			description: "single pod NOT running - succeeded (kubernetes jobs) - dedicated",
@@ -1116,13 +1115,11 @@ func TestMakeNodeToPodDataMap(t *testing.T) {
 				},
 			},
 			isPodRelevant: podprovider.IsPodRelevantDedicated,
-			expected: map[string][]podData{
-				"node1": {
-					{
-						Namespace:          "namespace1",
-						Name:               "pod1",
-						ExclusiveResources: ExclusiveResourceNone,
-					},
+			expectedPods: []podData{
+				{
+					Namespace:          "namespace1",
+					Name:               "pod1",
+					ExclusiveResources: ExclusiveResourceNone,
 				},
 			},
 		},
@@ -1143,13 +1140,11 @@ func TestMakeNodeToPodDataMap(t *testing.T) {
 				},
 			},
 			isPodRelevant: podprovider.IsPodRelevantDedicated,
-			expected: map[string][]podData{
-				"node1": {
-					{
-						Namespace:          "namespace1",
-						Name:               "pod1",
-						ExclusiveResources: ExclusiveResourceNone,
-					},
+			expectedPods: []podData{
+				{
+					Namespace:          "namespace1",
+					Name:               "pod1",
+					ExclusiveResources: ExclusiveResourceNone,
 				},
 			},
 		},
@@ -1170,7 +1165,7 @@ func TestMakeNodeToPodDataMap(t *testing.T) {
 				},
 			},
 			isPodRelevant: podprovider.IsPodRelevantShared,
-			expected:      map[string][]podData{},
+			expectedPods:  []podData{},
 		},
 		{
 			description: "single pod NOT running - failed - shared",
@@ -1189,7 +1184,7 @@ func TestMakeNodeToPodDataMap(t *testing.T) {
 				},
 			},
 			isPodRelevant: podprovider.IsPodRelevantShared,
-			expected:      map[string][]podData{},
+			expectedPods:  []podData{},
 		},
 		{
 			description: "single pod running - dedicated",
@@ -1208,13 +1203,11 @@ func TestMakeNodeToPodDataMap(t *testing.T) {
 				},
 			},
 			isPodRelevant: podprovider.IsPodRelevantDedicated,
-			expected: map[string][]podData{
-				"node1": {
-					{
-						Namespace:          "namespace1",
-						Name:               "pod1",
-						ExclusiveResources: ExclusiveResourceNone,
-					},
+			expectedPods: []podData{
+				{
+					Namespace:          "namespace1",
+					Name:               "pod1",
+					ExclusiveResources: ExclusiveResourceNone,
 				},
 			},
 		},
@@ -1235,13 +1228,11 @@ func TestMakeNodeToPodDataMap(t *testing.T) {
 				},
 			},
 			isPodRelevant: podprovider.IsPodRelevantDedicated,
-			expected: map[string][]podData{
-				"node1": {
-					{
-						Namespace:          "namespace1",
-						Name:               "pod1",
-						ExclusiveResources: ExclusiveResourceNone,
-					},
+			expectedPods: []podData{
+				{
+					Namespace:          "namespace1",
+					Name:               "pod1",
+					ExclusiveResources: ExclusiveResourceNone,
 				},
 			},
 		},
@@ -1286,23 +1277,21 @@ func TestMakeNodeToPodDataMap(t *testing.T) {
 				},
 			},
 			isPodRelevant: podprovider.IsPodRelevantDedicated,
-			expected: map[string][]podData{
-				"node1": {
-					{
-						Namespace:          "namespace1",
-						Name:               "pod1",
-						ExclusiveResources: ExclusiveResourceNone,
-					},
-					{
-						Namespace:          "namespace2",
-						Name:               "pod2",
-						ExclusiveResources: ExclusiveResourceNone,
-					},
-					{
-						Namespace:          "namespace2",
-						Name:               "pod3",
-						ExclusiveResources: ExclusiveResourceNone,
-					},
+			expectedPods: []podData{
+				{
+					Namespace:          "namespace1",
+					Name:               "pod1",
+					ExclusiveResources: ExclusiveResourceNone,
+				},
+				{
+					Namespace:          "namespace2",
+					Name:               "pod2",
+					ExclusiveResources: ExclusiveResourceNone,
+				},
+				{
+					Namespace:          "namespace2",
+					Name:               "pod3",
+					ExclusiveResources: ExclusiveResourceNone,
 				},
 			},
 		},
@@ -1315,19 +1304,26 @@ func TestMakeNodeToPodDataMap(t *testing.T) {
 				err:    tcase.err,
 				filter: tcase.isPodRelevant,
 			}
-			nrtResourcesLookup := func(nodeName string) sets.Set[corev1.ResourceName] { return nil }
-			got, err := makeNodeToPodDataMap(testr.New(t), podLister, nodeNamesFromPods(tcase.pods), nrtResourcesLookup, apiconfig.PreemptionDisabled)
-			if err != tcase.expectedErr {
-				t.Errorf("error mismatch: got %v expected %v", err, tcase.expectedErr)
+			fakeClient, err := tu.NewFakeClient(makeTestNRT("node1"))
+			if err != nil {
+				t.Fatal(err)
 			}
-			if diff := cmp.Diff(got, tcase.expected); diff != "" {
+			nrtCache := mustOverReserve(t, fakeClient, podLister)
+			gotNRT, gotPods, err := nrtCache.getNodeData(context.Background(), testr.New(t), "node1", true)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if gotNRT == nil || gotNRT.Name != "node1" {
+				t.Fatalf("expected NRT for node1, got %+v", gotNRT)
+			}
+			if diff := cmp.Diff(gotPods, tcase.expectedPods); diff != "" {
 				t.Errorf("unexpected result: %v", diff)
 			}
 		})
 	}
 }
 
-func TestMakeNodeToPodDataMapWithExclusiveResources(t *testing.T) {
+func TestGetNodeDataWithExclusiveResources(t *testing.T) {
 	podspec := corev1.PodSpec{
 		NodeName: "node1",
 		Containers: []corev1.Container{
@@ -1361,8 +1357,7 @@ func TestMakeNodeToPodDataMapWithExclusiveResources(t *testing.T) {
 		isPodRelevant  podprovider.PodFilterFunc
 		preemptionMode apiconfig.PreemptionMode
 		err            error
-		expected       map[string][]podData
-		expectedErr    error
+		expectedPods   []podData
 	}{
 		{
 			description: "few pods, shared without exclusive resources, preemption is disabled",
@@ -1381,13 +1376,11 @@ func TestMakeNodeToPodDataMapWithExclusiveResources(t *testing.T) {
 			},
 			preemptionMode: apiconfig.PreemptionDisabled,
 			isPodRelevant:  podprovider.IsPodRelevantShared,
-			expected: map[string][]podData{
-				"node1": {
-					{
-						Namespace:          "namespace1",
-						Name:               "pod1",
-						ExclusiveResources: ExclusiveResourceNone,
-					},
+			expectedPods: []podData{
+				{
+					Namespace:          "namespace1",
+					Name:               "pod1",
+					ExclusiveResources: ExclusiveResourceNone,
 				},
 			},
 		},
@@ -1408,13 +1401,11 @@ func TestMakeNodeToPodDataMapWithExclusiveResources(t *testing.T) {
 			},
 			preemptionMode: apiconfig.PreemptionDisabled,
 			isPodRelevant:  podprovider.IsPodRelevantShared,
-			expected: map[string][]podData{
-				"node1": {
-					{
-						Namespace:          "namespace1",
-						Name:               "pod1",
-						ExclusiveResources: ExclusiveResourceAlloc,
-					},
+			expectedPods: []podData{
+				{
+					Namespace:          "namespace1",
+					Name:               "pod1",
+					ExclusiveResources: ExclusiveResourceAlloc,
 				},
 			},
 		},
@@ -1435,13 +1426,11 @@ func TestMakeNodeToPodDataMapWithExclusiveResources(t *testing.T) {
 			},
 			preemptionMode: apiconfig.PreemptionEnabled,
 			isPodRelevant:  podprovider.IsPodRelevantShared,
-			expected: map[string][]podData{
-				"node1": {
-					{
-						Namespace:        "namespace1",
-						Name:             "pod1",
-						PinnedContainers: []string{"initcontainer1", "container1"},
-					},
+			expectedPods: []podData{
+				{
+					Namespace:        "namespace1",
+					Name:             "pod1",
+					PinnedContainers: []string{"initcontainer1", "container1"},
 				},
 			},
 		},
@@ -1462,13 +1451,11 @@ func TestMakeNodeToPodDataMapWithExclusiveResources(t *testing.T) {
 			},
 			preemptionMode: apiconfig.PreemptionDisabled,
 			isPodRelevant:  podprovider.IsPodRelevantDedicated,
-			expected: map[string][]podData{
-				"node1": {
-					{
-						Namespace:          "namespace1",
-						Name:               "pod1",
-						ExclusiveResources: ExclusiveResourceAlloc,
-					},
+			expectedPods: []podData{
+				{
+					Namespace:          "namespace1",
+					Name:               "pod1",
+					ExclusiveResources: ExclusiveResourceAlloc,
 				},
 			},
 		},
@@ -1489,13 +1476,11 @@ func TestMakeNodeToPodDataMapWithExclusiveResources(t *testing.T) {
 			},
 			preemptionMode: apiconfig.PreemptionEnabled,
 			isPodRelevant:  podprovider.IsPodRelevantDedicated,
-			expected: map[string][]podData{
-				"node1": {
-					{
-						Namespace:        "namespace1",
-						Name:             "pod1",
-						PinnedContainers: []string{"initcontainer1", "container1"},
-					},
+			expectedPods: []podData{
+				{
+					Namespace:        "namespace1",
+					Name:             "pod1",
+					PinnedContainers: []string{"initcontainer1", "container1"},
 				},
 			},
 		},
@@ -1541,13 +1526,11 @@ func TestMakeNodeToPodDataMapWithExclusiveResources(t *testing.T) {
 			},
 			preemptionMode: apiconfig.PreemptionDisabled,
 			isPodRelevant:  podprovider.IsPodRelevantShared,
-			expected: map[string][]podData{
-				"node1": {
-					{
-						Namespace:          "namespace1",
-						Name:               "pod1",
-						ExclusiveResources: ExclusiveResourceAlloc,
-					},
+			expectedPods: []podData{
+				{
+					Namespace:          "namespace1",
+					Name:               "pod1",
+					ExclusiveResources: ExclusiveResourceAlloc,
 				},
 			},
 		},
@@ -1560,13 +1543,287 @@ func TestMakeNodeToPodDataMapWithExclusiveResources(t *testing.T) {
 				err:    tcase.err,
 				filter: tcase.isPodRelevant,
 			}
-			nrtResourcesLookup := func(nodeName string) sets.Set[corev1.ResourceName] { return nil }
-			got, err := makeNodeToPodDataMap(testr.New(t), podLister, nodeNamesFromPods(tcase.pods), nrtResourcesLookup, tcase.preemptionMode)
-			if err != tcase.expectedErr {
-				t.Errorf("error mismatch: got %v expected %v", err, tcase.expectedErr)
+			fakeClient, err := tu.NewFakeClient(makeTestNRT("node1"))
+			if err != nil {
+				t.Fatal(err)
 			}
-			if diff := cmp.Diff(got, tcase.expected); diff != "" {
+			mode := tcase.preemptionMode
+			if mode == "" {
+				mode = apiconfig.PreemptionDisabled
+			}
+			nrtCache, err := NewOverReserve(context.Background(), testr.New(t), nil, fakeClient, podLister, mode)
+			if err != nil {
+				t.Fatalf("unexpected error creating cache: %v", err)
+			}
+			t.Cleanup(nrtCache.Close)
+			gotNRT, gotPods, err := nrtCache.getNodeData(context.Background(), testr.New(t), "node1", true)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if gotNRT == nil || gotNRT.Name != "node1" {
+				t.Fatalf("expected NRT for node1, got %+v", gotNRT)
+			}
+			if diff := cmp.Diff(gotPods, tcase.expectedPods); diff != "" {
 				t.Errorf("unexpected result: %v", diff)
+			}
+		})
+	}
+}
+
+func TestGetNodeDataWithUnfoundNRT(t *testing.T) {
+	podLister := &fakePodLister{
+		pods:   []*corev1.Pod{},
+		filter: podprovider.IsPodRelevantShared,
+	}
+	fakeClient, err := tu.NewFakeClient(makeTestNRT("node1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	nrtCache := mustOverReserve(t, fakeClient, podLister)
+
+	gotNRT, gotPods, err := nrtCache.getNodeData(context.Background(), testr.New(t), "node-not-found", false)
+	if err == nil {
+		t.Errorf("expected error, got nil")
+	}
+	if gotNRT != nil {
+		t.Errorf("expected nil NRT, got %+v", gotNRT)
+	}
+	if gotPods != nil {
+		t.Errorf("expected nil pods, got %+v", gotPods)
+	}
+}
+
+func TestGetNodeDataWithoutPods(t *testing.T) {
+	listerErr := errors.New("pod lister should not be called")
+
+	tcases := []struct {
+		description   string
+		nodeName      string
+		wantErr       bool
+		wantNRTName   string
+		wantPodsEmpty bool
+	}{
+		{
+			description:   "returns NRT without listing pods when withPods is false",
+			nodeName:      "node1",
+			wantNRTName:   "node1",
+			wantPodsEmpty: true,
+		},
+		{
+			description: "still requires NRT to exist",
+			nodeName:    "node-not-found",
+			wantErr:     true,
+		},
+	}
+
+	for _, tcase := range tcases {
+		t.Run(tcase.description, func(t *testing.T) {
+			podLister := &fakePodLister{
+				pods: []*corev1.Pod{
+					{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: "namespace1",
+							Name:      "pod1",
+						},
+						Spec: corev1.PodSpec{
+							NodeName: "node1",
+						},
+						Status: corev1.PodStatus{
+							Phase: corev1.PodRunning,
+						},
+					},
+				},
+				err:    listerErr,
+				filter: podprovider.IsPodRelevantShared,
+			}
+			fakeClient, err := tu.NewFakeClient(makeTestNRT("node1"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			nrtCache := mustOverReserve(t, fakeClient, podLister)
+
+			gotNRT, gotPods, err := nrtCache.getNodeData(context.Background(), testr.New(t), tcase.nodeName, false)
+			if tcase.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				if gotNRT != nil {
+					t.Errorf("expected nil NRT, got %+v", gotNRT)
+				}
+				if gotPods != nil {
+					t.Errorf("expected nil pods, got %+v", gotPods)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if gotNRT == nil || gotNRT.Name != tcase.wantNRTName {
+				t.Fatalf("expected NRT for %s, got %+v", tcase.wantNRTName, gotNRT)
+			}
+			if tcase.wantPodsEmpty && gotPods != nil {
+				t.Errorf("expected nil pods when withPods is false, got %+v", gotPods)
+			}
+		})
+	}
+}
+
+func TestMakeNRTUpdatesConfigChangedPods(t *testing.T) {
+	listerErr := errors.New("pod lister should not be called when withPods is false")
+	runningPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "namespace1",
+			Name:      "pod1",
+		},
+		Spec: corev1.PodSpec{
+			NodeName: "node1",
+		},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodRunning,
+		},
+	}
+
+	tcases := []struct {
+		description    string
+		preemptionMode apiconfig.PreemptionMode
+		podLister      *fakePodLister
+		wantUpdates    int
+		wantPods       bool
+	}{
+		{
+			description:    "preemption disabled skips pod listing for config changed nodes",
+			preemptionMode: apiconfig.PreemptionDisabled,
+			podLister: &fakePodLister{
+				err:    listerErr,
+				filter: podprovider.IsPodRelevantShared,
+			},
+			wantUpdates: 1,
+		},
+		{
+			description:    "preemption enabled lists pods for config changed nodes",
+			preemptionMode: apiconfig.PreemptionEnabled,
+			podLister: &fakePodLister{
+				pods:   []*corev1.Pod{runningPod},
+				filter: podprovider.IsPodRelevantShared,
+			},
+			wantUpdates: 1,
+			wantPods:    true,
+		},
+		{
+			description:    "preemption enabled fails when pod listing fails",
+			preemptionMode: apiconfig.PreemptionEnabled,
+			podLister: &fakePodLister{
+				err:    listerErr,
+				filter: podprovider.IsPodRelevantShared,
+			},
+			wantUpdates: 0,
+		},
+	}
+
+	for _, tcase := range tcases {
+		t.Run(tcase.description, func(t *testing.T) {
+			fakeClient, err := tu.NewFakeClient(makeTestNRT("node1"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			nrtCache, err := NewOverReserve(context.Background(), testr.New(t), nil, fakeClient, tcase.podLister, tcase.preemptionMode)
+			if err != nil {
+				t.Fatalf("unexpected error creating cache: %v", err)
+			}
+			t.Cleanup(nrtCache.Close)
+
+			updates := nrtCache.MakeNRTUpdates(context.Background(), testr.New(t), DesyncedNodes{
+				ConfigChanged: []string{"node1"},
+			})
+			if len(updates) != tcase.wantUpdates {
+				t.Fatalf("expected %d updates, got %d", tcase.wantUpdates, len(updates))
+			}
+			if tcase.wantUpdates == 0 {
+				return
+			}
+			if updates[0].nrt == nil || updates[0].nrt.Name != "node1" {
+				t.Fatalf("expected NRT for node1, got %+v", updates[0].nrt)
+			}
+			if tcase.wantPods {
+				if len(updates[0].pods) != 1 {
+					t.Fatalf("expected pods in update, got %+v", updates[0].pods)
+				}
+			} else if len(updates[0].pods) != 0 {
+				t.Errorf("expected no pods in update, got %+v", updates[0].pods)
+			}
+		})
+	}
+}
+
+func TestGetNodeDataPodListerError(t *testing.T) {
+	podLister := &fakePodLister{
+		err:    errors.New("failed to list pods"),
+		filter: podprovider.IsPodRelevantShared,
+	}
+	fakeClient, err := tu.NewFakeClient(makeTestNRT("node1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	nrtCache := mustOverReserve(t, fakeClient, podLister)
+
+	gotNRT, gotPods, err := nrtCache.getNodeData(context.Background(), testr.New(t), "node1", true)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if gotNRT != nil {
+		t.Errorf("expected nil NRT on pod lister error, got %+v", gotNRT)
+	}
+	if gotPods != nil {
+		t.Errorf("expected nil pods on pod lister error, got %+v", gotPods)
+	}
+}
+
+func TestNRTUpdateForFlush(t *testing.T) {
+	nrt := makeTestNRT("node1")
+	pods := []podData{{
+		Namespace:          "namespace1",
+		Name:               "pod1",
+		ExclusiveResources: ExclusiveResourceAlloc,
+	}}
+
+	tcases := []struct {
+		description    string
+		preemptionMode apiconfig.PreemptionMode
+		wantPods       bool
+	}{
+		{
+			description:    "preemption disabled drops pods",
+			preemptionMode: apiconfig.PreemptionDisabled,
+		},
+		{
+			description:    "preemption enabled keeps pods",
+			preemptionMode: apiconfig.PreemptionEnabled,
+			wantPods:       true,
+		},
+	}
+
+	for _, tcase := range tcases {
+		t.Run(tcase.description, func(t *testing.T) {
+			fakeClient, err := tu.NewFakeClient(nrt)
+			if err != nil {
+				t.Fatal(err)
+			}
+			nrtCache, err := NewOverReserve(context.Background(), testr.New(t), nil, fakeClient, &fakePodLister{}, tcase.preemptionMode)
+			if err != nil {
+				t.Fatalf("unexpected error creating cache: %v", err)
+			}
+			t.Cleanup(nrtCache.Close)
+
+			got := nrtCache.nrtUpdateForFlush(nrt, pods)
+			if got.nrt != nrt {
+				t.Fatalf("NRT should not change %p, got %p", nrt, got.nrt)
+			}
+			if tcase.wantPods {
+				if diff := cmp.Diff(got.pods, pods); diff != "" {
+					t.Errorf("unexpected pods: %s", diff)
+				}
+			} else if len(got.pods) != 0 {
+				t.Errorf("expected no pods, got %v", got.pods)
 			}
 		})
 	}
@@ -1619,14 +1876,4 @@ func TestOverresevedGetCachedNRTCopyWithForeignPods(t *testing.T) {
 	if gotInfo.Fresh {
 		t.Errorf("cached data reported fresh when node has foreign pods")
 	}
-}
-
-func nodeNamesFromPods(pods []*corev1.Pod) []string {
-	names := sets.New[string]()
-	for _, pod := range pods {
-		if pod.Spec.NodeName != "" {
-			names.Insert(pod.Spec.NodeName)
-		}
-	}
-	return names.UnsortedList()
 }
