@@ -33,6 +33,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	podlisterv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/klog/v2"
+	podutil "k8s.io/kubernetes/pkg/api/v1/pod"
 	v1qos "k8s.io/kubernetes/pkg/apis/core/v1/helper/qos"
 
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -481,20 +482,20 @@ func categorizePodForPreemption(pod *corev1.Pod, nrtResources sets.Set[corev1.Re
 		Name:      pod.Name,
 	}
 
-	for _, ctr := range pod.Spec.InitContainers {
+	for ctr := range podutil.ContainerIter(&pod.Spec, podutil.InitContainers) {
 		// filter out init containers with restart policy other than Always because these are *supposed* to
 		// run fast and finish, hence not consuming exclusive resources in a steady state while the pod is Running.
-		if !util.IsSidecarInitContainer(&ctr) {
+		if !util.IsSidecarInitContainer(ctr) {
 			continue
 		}
-		if !resourcerequests.IsExclusiveForContainer(qos, ctr, nrtResources) {
+		if !resourcerequests.IsExclusiveForContainer(qos, *ctr, nrtResources) {
 			continue
 		}
 		ret.PinnedContainers = append(ret.PinnedContainers, ctr.Name)
 	}
 
-	for _, ctr := range pod.Spec.Containers {
-		if !resourcerequests.IsExclusiveForContainer(qos, ctr, nrtResources) {
+	for ctr := range podutil.ContainerIter(&pod.Spec, podutil.Containers) {
+		if !resourcerequests.IsExclusiveForContainer(qos, *ctr, nrtResources) {
 			continue
 		}
 		ret.PinnedContainers = append(ret.PinnedContainers, ctr.Name)
