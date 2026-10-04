@@ -397,6 +397,9 @@ func autoConvert_v1_NodeMetadataArgs_To_config_NodeMetadataArgs(in *NodeMetadata
 	if err := metav1.Convert_Pointer_string_To_string(&in.TimestampFormat, &out.TimestampFormat, s); err != nil {
 		return err
 	}
+	if err := metav1.Convert_Pointer_string_To_string(&in.DefaultValue, &out.DefaultValue, s); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -408,6 +411,9 @@ func autoConvert_config_NodeMetadataArgs_To_v1_NodeMetadataArgs(in *config.NodeM
 	// WARNING: in.MetadataType requires manual conversion: inconvertible types (sigs.k8s.io/scheduler-plugins/apis/config.MetadataValueType vs *sigs.k8s.io/scheduler-plugins/apis/config/v1.MetadataValueType)
 	// WARNING: in.ScoringStrategy requires manual conversion: inconvertible types (sigs.k8s.io/scheduler-plugins/apis/config.MetadataScoringStrategy vs *sigs.k8s.io/scheduler-plugins/apis/config/v1.MetadataScoringStrategy)
 	if err := metav1.Convert_string_To_Pointer_string(&in.TimestampFormat, &out.TimestampFormat, s); err != nil {
+		return err
+	}
+	if err := metav1.Convert_string_To_Pointer_string(&in.DefaultValue, &out.DefaultValue, s); err != nil {
 		return err
 	}
 	return nil

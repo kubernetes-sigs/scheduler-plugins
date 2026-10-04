@@ -18,6 +18,8 @@ package validation
 
 import (
 	"fmt"
+	"strconv"
+	"time"
 
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/validation/field"
@@ -180,10 +182,58 @@ func ValidateNodeMetadataArgs(args *config.NodeMetadataArgs, path *field.Path) e
 			allErrs = append(allErrs, field.Invalid(field.NewPath("scoringStrategy"),
 				args.ScoringStrategy, "scoringStrategy \"Highest\" and \"Lowest\" are only valid for metadataType \"Number\""))
 		}
+		if args.TimestampFormat != "" {
+			if err := validateTimestampFormat(args.TimestampFormat); err != nil {
+				allErrs = append(allErrs, field.Invalid(field.NewPath("timestampFormat"),
+					args.TimestampFormat, fmt.Sprintf("timestampFormat must be a valid Go time layout: %v", err)))
+			}
+		}
+	}
+
+	if args.DefaultValue != "" {
+		switch args.MetadataType {
+		case config.MetadataTypeNumber:
+			if _, err := strconv.ParseFloat(args.DefaultValue, 64); err != nil {
+				allErrs = append(allErrs, field.Invalid(field.NewPath("defaultValue"),
+					args.DefaultValue, "defaultValue must be a valid number when metadataType is \"Number\""))
+			}
+		case config.MetadataTypeTimestamp:
+			format := args.TimestampFormat
+			if format == "" {
+				format = time.RFC3339
+			}
+			if _, err := time.Parse(format, args.DefaultValue); err != nil {
+				allErrs = append(allErrs, field.Invalid(field.NewPath("defaultValue"),
+					args.DefaultValue, "defaultValue must match timestampFormat when metadataType is \"Timestamp\""))
+			}
+		}
 	}
 
 	if len(allErrs) == 0 {
 		return nil
 	}
 	return allErrs.ToAggregate()
+}
+
+func validateTimestampFormat(format string) error {
+	sample := time.Date(2026, time.August, 29, 13, 14, 15, 123456789, time.UTC)
+	parsed, err := time.Parse(format, sample.Format(format))
+	if err != nil {
+		return err
+	}
+
+	// Go permits a layout made entirely of literal text. Such a layout cannot
+	// represent a timestamp and usually signals a non-Go layout such as
+	// "YYYY-MM-DD".
+	if parsed.Year() != sample.Year() &&
+		parsed.Month() != sample.Month() &&
+		parsed.Day() != sample.Day() &&
+		parsed.Hour() != sample.Hour() &&
+		parsed.Minute() != sample.Minute() &&
+		parsed.Second() != sample.Second() &&
+		parsed.Nanosecond() != sample.Nanosecond() {
+		return fmt.Errorf("must contain at least one Go reference time component")
+	}
+
+	return nil
 }

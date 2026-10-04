@@ -90,7 +90,10 @@ func (nm *NodeMetadata) calculateScore(node *v1.Node) (int64, error) {
 	}
 
 	if !found {
-		return 0, fmt.Errorf("metadata key %q not found in %s", nm.args.MetadataKey, nm.args.MetadataSource)
+		if nm.args.DefaultValue == "" {
+			return 0, fmt.Errorf("metadata key %q not found in %s", nm.args.MetadataKey, nm.args.MetadataSource)
+		}
+		metadataValue = nm.args.DefaultValue
 	}
 
 	// Parse the value based on the configured type
