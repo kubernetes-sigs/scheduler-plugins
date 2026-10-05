@@ -26,9 +26,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	podlisterv1 "k8s.io/client-go/listers/core/v1"
 
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/podprovider"
 )
 
 func TestDiscardReservedNodesGetCachedNRTCopy(t *testing.T) {
@@ -50,7 +50,7 @@ func TestDiscardReservedNodesGetCachedNRTCopy(t *testing.T) {
 
 	checkGetCachedNRTCopy(
 		t,
-		func(client ctrlclient.WithWatch, _ podlisterv1.PodLister) (Interface, error) {
+		func(client ctrlclient.WithWatch, _ podprovider.Lister) (Interface, error) {
 			return NewDiscardReserved(testr.New(t), client), nil
 		},
 		testCases...,
