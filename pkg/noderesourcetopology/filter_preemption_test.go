@@ -278,7 +278,7 @@ func TestFilter_PreemptionFlow(t *testing.T) {
 		}
 	})
 
-	t.Run("preemption with eviction simulation failure results in unschedulable", func(t *testing.T) {
+	t.Run("preemption with eviction simulation failure results in unschedulableAndUnresolvable", func(t *testing.T) {
 		cache := &fakeFilterCache{nrt: nrt, numaPlacement: numaPlacement}
 		tm := TopologyMatch{nrtCache: cache, preemptionMode: apiconfig.PreemptionEnabled}
 		// add a second victim that is not in numa placement info
@@ -287,8 +287,8 @@ func TestFilter_PreemptionFlow(t *testing.T) {
 
 		tooLarge := makeGuaranteedPod("default", "preemptor", containerName, 4, "1Gi")
 		status := tm.Filter(context.Background(), cycleState, tooLarge, nodeInfo)
-		if !quasiEqualStatus(status, fwk.NewStatus(fwk.Unschedulable, "eviction simulation in NRT is not possible: missing NUMA mapping")) {
-			t.Fatalf("expected unschedulable preemptor, got %v", status)
+		if !quasiEqualStatus(status, fwk.NewStatus(fwk.UnschedulableAndUnresolvable, "eviction simulation in NRT is not possible: missing NUMA mapping")) {
+			t.Fatalf("expected unschedulableAndUnresolvable preemptor, got %v", status)
 		}
 		if len(cache.maybeOverReserved) == 0 || cache.maybeOverReserved[0] != nodeName {
 			t.Fatalf("preemption flow must mark node over-reserved on failure, got %v", cache.maybeOverReserved)
@@ -328,8 +328,8 @@ func TestFilter_PreemptionFlow(t *testing.T) {
 		cycleState := cycleStateWithVictims(t, nonExclusive0, nonExclusive1, exclusiveVictim)
 
 		status := tm.Filter(context.Background(), cycleState, preemptor, nodeInfo)
-		if !quasiEqualStatus(status, fwk.NewStatus(fwk.Unschedulable, "eviction simulation in NRT is not possible: missing NUMA mapping")) {
-			t.Fatalf("expected unschedulable preemptor, got %v", status)
+		if !quasiEqualStatus(status, fwk.NewStatus(fwk.UnschedulableAndUnresolvable, "eviction simulation in NRT is not possible: missing NUMA mapping")) {
+			t.Fatalf("expected unschedulableAndUnresolvable preemptor, got %v", status)
 		}
 		if len(cache.maybeOverReserved) != 1 || cache.maybeOverReserved[0] != nodeName {
 			t.Fatalf("preemption flow must mark node over-reserved on eviction simulation failure, got %v", cache.maybeOverReserved)
