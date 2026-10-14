@@ -68,6 +68,7 @@ func initNodeTopologyInformer(ctx context.Context, lh logr.Logger,
 	}
 
 	initNodeTopologyForeignPodsDetection(lh, tcfg.Cache, handle, podSharedInformer, nrtCache)
+	initSameProfileTerminatedPodsDetection(lh, handle, podSharedInformer, nrtCache)
 
 	resyncPeriod := time.Duration(tcfg.CacheResyncPeriodSeconds) * time.Second
 	go wait.Forever(nrtCache.Resync, resyncPeriod)
@@ -100,6 +101,18 @@ func initNodeTopologyForeignPodsDetection(lh logr.Logger, cfg *apiconfig.NodeRes
 	}
 	nrtcache.RegisterSchedulerProfileName(lh.WithName(logging.SubsystemForeignPods), profileName)
 	nrtcache.SetupForeignPodsDetector(lh.WithName(logging.SubsystemForeignPods), profileName, podSharedInformer, nrtCache)
+}
+
+func initSameProfileTerminatedPodsDetection(lh logr.Logger, handle fwk.Handle, podSharedInformer k8scache.SharedInformer, nrtCache *nrtcache.OverReserve) {
+	fwk, ok := handle.(framework.Framework)
+	if !ok {
+		lh.Info("cannot determine the scheduler profile name - no terminated own-pods detection enabled")
+		return
+	}
+
+	profileName := fwk.ProfileName()
+	lh.Info("setting up terminated own-pods detection", "name", profileName)
+	nrtcache.SetupTerminatedOwnPodsHandler(lh.WithName(logging.SubsystemNRTCache), profileName, podSharedInformer, nrtCache)
 }
 
 func createNUMANodeList(lh logr.Logger, zones topologyv1alpha2.ZoneList) NUMANodeList {

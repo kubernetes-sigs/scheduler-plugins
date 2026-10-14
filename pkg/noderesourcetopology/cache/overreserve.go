@@ -64,17 +64,20 @@ type OverReserve struct {
 	// nodesMaybeOverreserved counts how many times a node is filtered out. This is used as trigger condition to try
 	// to resync nodes. See The documentation of Resync() below for more details.
 	nodesMaybeOverreserved counter
-	nodesWithForeignPods   counter
-	nodesWithAttrUpdate    counter
-	podLister              podlisterv1.PodLister
-	resyncMethod           apiconfig.CacheResyncMethod
-	resyncScope            apiconfig.CacheResyncScope
-	isPodRelevant          podprovider.PodFilterFunc
-	preemptionMode         apiconfig.PreemptionMode
-	nrtUpdateCh            chan NRTEvent
-	watchCancel            context.CancelFunc
-	nrtWatcher             *Watcher
-	closeOnce              sync.Once
+	// nodesWithBlockingUpdates counts how many times a node is filtered out due to updates that the NRT profile has
+	// no control over and cannot make guarantees about. When the node is marked with this counter, the node is blocked
+	// from scheduling until the next Resync+PFP flush.
+	nodesWithBlockingUpdates counter
+	nodesWithAttrUpdate      counter
+	podLister                podlisterv1.PodLister
+	resyncMethod             apiconfig.CacheResyncMethod
+	resyncScope              apiconfig.CacheResyncScope
+	isPodRelevant            podprovider.PodFilterFunc
+	preemptionMode           apiconfig.PreemptionMode
+	nrtUpdateCh              chan NRTEvent
+	watchCancel              context.CancelFunc
+	nrtWatcher               *Watcher
+	closeOnce                sync.Once
 }
 
 func NewOverReserve(
@@ -101,20 +104,20 @@ func NewOverReserve(
 	lh.V(2).Info("initializing", "noderesourcetopologies", len(nrtObjs.Items), "method", resyncMethod, "scope", resyncScope)
 	watcherCtx, watchCancel := context.WithCancel(ctx)
 	obj := &OverReserve{
-		lh:                     lh,
-		client:                 client,
-		nrts:                   newNrtStore(lh, nrtObjs.Items),
-		nrtResNames:            newNrtResourcesStore(nrtObjs.Items),
-		assumedResources:       make(map[string]*resourceStore),
-		nodesMaybeOverreserved: newCounter(),
-		nodesWithForeignPods:   newCounter(),
-		nodesWithAttrUpdate:    newCounter(),
-		nrtUpdateCh:            make(chan NRTEvent, defaultMaxNRTUpdates),
-		podLister:              podLister,
-		resyncMethod:           resyncMethod,
-		isPodRelevant:          isPodRelevant,
-		preemptionMode:         preemptionMode,
-		watchCancel:            watchCancel,
+		lh:                       lh,
+		client:                   client,
+		nrts:                     newNrtStore(lh, nrtObjs.Items),
+		nrtResNames:              newNrtResourcesStore(nrtObjs.Items),
+		assumedResources:         make(map[string]*resourceStore),
+		nodesMaybeOverreserved:   newCounter(),
+		nodesWithBlockingUpdates: newCounter(),
+		nodesWithAttrUpdate:      newCounter(),
+		nrtUpdateCh:              make(chan NRTEvent, defaultMaxNRTUpdates),
+		podLister:                podLister,
+		resyncMethod:             resyncMethod,
+		isPodRelevant:            isPodRelevant,
+		preemptionMode:           preemptionMode,
+		watchCancel:              watchCancel,
 	}
 
 	if resyncScope == apiconfig.CacheResyncScopeAll {
@@ -131,7 +134,7 @@ func (ov *OverReserve) GetCachedNRTCopy(ctx context.Context, nodeName string, po
 	ov.lock.Lock()
 	defer ov.lock.Unlock()
 	info := CachedNRTInfo{Generation: ov.generation}
-	if ov.nodesWithForeignPods.IsSet(nodeName) {
+	if ov.nodesWithBlockingUpdates.IsSet(nodeName) {
 		return nil, info
 	}
 
@@ -176,7 +179,7 @@ func (ov *OverReserve) NodeHasForeignPods(nodeName string, pod *corev1.Pod) {
 		lh.V(5).Info("ignoring foreign pods", "nrtinfo", "missing")
 		return
 	}
-	val := ov.nodesWithForeignPods.Incr(nodeName)
+	val := ov.nodesWithBlockingUpdates.Incr(nodeName)
 	lh.V(2).Info("marked with foreign pods", logging.KeyNode, nodeName, "count", val)
 }
 
@@ -215,6 +218,37 @@ func (ov *OverReserve) UnreserveNodeResources(nodeName string, pod *corev1.Pod) 
 }
 
 func (ov *OverReserve) PostBind(nodeName string, pod *corev1.Pod) {}
+
+// RemoveAssumedPodOnTermination handles deletion of an own-profile pod that requested
+// exclusive resources:
+//   - If the pod is still tracked in assumedResources, clear that overlay and mark the
+//     node dirty (NodeMaybeOverReserved) so Resync can refresh later. The node stays Fresh.
+//   - If the pod is not in assumedResources, the cached NRT Available may still reflect it.
+//     Mark the node !Fresh (same mechanism as foreign pods) so Filter blocks the node until
+//     the next Resync+PFP flush, avoiding false Unschedulable that could trigger preemption.
+func (ov *OverReserve) RemoveAssumedPodOnTermination(nodeName string, pod *corev1.Pod) {
+	lh := ov.lh.WithValues(logging.KeyPod, klog.KObj(pod), logging.KeyPodUID, logging.PodUID(pod), logging.KeyNode, nodeName)
+	ov.lock.Lock()
+	defer ov.lock.Unlock()
+
+	had := false
+	if nodeAssumedResources, ok := ov.assumedResources[nodeName]; ok {
+		had = nodeAssumedResources.DeletePod(pod)
+	}
+
+	if had {
+		dirtyCount := ov.nodesMaybeOverreserved.Incr(nodeName)
+		lh.V(2).Info("cleared assumed resources for terminated pod", "hadAssumedEntry", true, "dirtyCount", dirtyCount)
+		return
+	}
+
+	if !ov.nrts.Contains(nodeName) {
+		lh.V(5).Info("ignoring terminated pod without node entry", "nrtinfo", "missing")
+		return
+	}
+	val := ov.nodesWithBlockingUpdates.Incr(nodeName)
+	lh.V(2).Info("terminated pod not in assumed; block scheduling on node until resync", "count", val)
+}
 
 // Close is safe to call multiple times and concurrently: sync.Once
 // guarantees the shutdown sequence runs exactly once and it is then idempotent
@@ -271,7 +305,7 @@ func (ov *OverReserve) GetDesyncedNodes(lh logr.Logger) DesyncedNodes {
 	// exhausted. We do like this because this is the safest approach. We will optimize
 	// the node selection logic later on to make the resync procedure less aggressive but
 	// still correct.
-	nodes := ov.nodesWithForeignPods.Clone()
+	nodes := ov.nodesWithBlockingUpdates.Clone()
 	foreignCount := nodes.Len()
 
 	overreservedCount := ov.nodesMaybeOverreserved.Len()
@@ -436,7 +470,7 @@ func (ov *OverReserve) FlushNodes(lh logr.Logger, nrtUpdates ...nrtUpdate) uint6
 		ov.nrtResNames.Update(nrtUpdate.nrt)
 		delete(ov.assumedResources, nrtUpdate.nrt.Name)
 		ov.nodesMaybeOverreserved.Delete(nrtUpdate.nrt.Name)
-		ov.nodesWithForeignPods.Delete(nrtUpdate.nrt.Name)
+		ov.nodesWithBlockingUpdates.Delete(nrtUpdate.nrt.Name)
 		ov.nodesWithAttrUpdate.Delete(nrtUpdate.nrt.Name)
 	}
 
