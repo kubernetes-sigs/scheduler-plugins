@@ -28,10 +28,8 @@ import (
 	"github.com/k8stopologyawareschedwg/podfingerprint"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
-	podlisterv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/klog/v2"
 	podutil "k8s.io/kubernetes/pkg/api/v1/pod"
 	v1qos "k8s.io/kubernetes/pkg/apis/core/v1/helper/qos"
@@ -66,10 +64,9 @@ type OverReserve struct {
 	nodesMaybeOverreserved counter
 	nodesWithForeignPods   counter
 	nodesWithAttrUpdate    counter
-	podLister              podlisterv1.PodLister
+	podLister              podprovider.Lister
 	resyncMethod           apiconfig.CacheResyncMethod
 	resyncScope            apiconfig.CacheResyncScope
-	isPodRelevant          podprovider.PodFilterFunc
 	preemptionMode         apiconfig.PreemptionMode
 	nrtUpdateCh            chan NRTEvent
 	watchCancel            context.CancelFunc
@@ -82,8 +79,7 @@ func NewOverReserve(
 	lh logr.Logger,
 	cfg *apiconfig.NodeResourceTopologyCache,
 	client ctrlclient.WithWatch,
-	podLister podlisterv1.PodLister,
-	isPodRelevant podprovider.PodFilterFunc,
+	podLister podprovider.Lister,
 	preemptionMode apiconfig.PreemptionMode,
 ) (*OverReserve, error) {
 	if client == nil || podLister == nil {
@@ -112,7 +108,6 @@ func NewOverReserve(
 		nrtUpdateCh:            make(chan NRTEvent, defaultMaxNRTUpdates),
 		podLister:              podLister,
 		resyncMethod:           resyncMethod,
-		isPodRelevant:          isPodRelevant,
 		preemptionMode:         preemptionMode,
 		watchCancel:            watchCancel,
 	}
@@ -324,31 +319,21 @@ func (ov *OverReserve) Resync() {
 	ov.FlushNodes(lh_, nrtUpdates...)
 }
 
+// MakeNRTUpdates constructs the NRT updates for the dirty nodes by collecting
+// the node data per node and runs a gate check on the node data. Per-node process failure is
+// logged out only and the flow continues processing the remaining nodes.
 func (ov *OverReserve) MakeNRTUpdates(ctx context.Context, lh_ logr.Logger, nodes DesyncedNodes) []nrtUpdate {
 	var nrtUpdates []nrtUpdate
 
-	// node -> pod identifier (namespace, name)
-	nodeToObjsMap, err := makeNodeToPodDataMap(lh_, ov.podLister, ov.isPodRelevant, ov.nrtResNames.Get, ov.preemptionMode)
-	if err != nil {
-		lh_.Error(err, "cannot find the mapping between running pods and nodes")
-		return nrtUpdates
-	}
-
-	isNRTFresher := func(lh logr.Logger, nrtCandidate *topologyv1alpha2.NodeResourceTopology) error {
-		objs, ok := nodeToObjsMap[nrtCandidate.Name]
-		if !ok {
-			// this really should never happen
-			return errors.New("cannot find any pod for node")
-		}
-
-		pfpExpected, onlyExclRes := podFingerprintForNodeTopology(nrtCandidate, ov.resyncMethod)
+	isNRTFresher := func(lh logr.Logger, nrt *topologyv1alpha2.NodeResourceTopology, pods []podData) error {
+		pfpExpected, onlyExclRes := podFingerprintForNodeTopology(nrt, ov.resyncMethod)
 		if pfpExpected == "" {
 			return errors.New("missing NodeTopology podset fingerprint data")
 		}
 
 		lh.V(4).Info("trying to sync NodeTopology", "fingerprint", pfpExpected, "onlyExclusiveResources", onlyExclRes)
 
-		err = checkPodFingerprintForNode(lh, objs, nrtCandidate.Name, pfpExpected, onlyExclRes)
+		err := checkPodFingerprintForNode(lh, pods, nrt.Name, pfpExpected, onlyExclRes)
 		if errors.Is(err, podfingerprint.ErrSignatureMismatch) {
 			// can happen, not critical
 			return errors.New("NodeTopology podset fingerprint mismatch")
@@ -362,19 +347,18 @@ func (ov *OverReserve) MakeNRTUpdates(ctx context.Context, lh_ logr.Logger, node
 	}
 
 	if part := ov.makeNRTUpdatesForNodes(ctx, lh_, ov.client, nodeUpdatePool{
-		NodeToObjsMap: nodeToObjsMap,
-		Names:         nodes.MaybeOverReserved,
-		Reason:        "resynced",
-		GateCheck:     isNRTFresher,
+		Names:                nodes.MaybeOverReserved,
+		Reason:               "resynced",
+		NeedPodsForGateCheck: true,
+		GateCheck:            isNRTFresher,
 	}); len(part) > 0 {
 		nrtUpdates = append(nrtUpdates, part...)
 	}
 
 	if part := ov.makeNRTUpdatesForNodes(ctx, lh_, ov.client, nodeUpdatePool{
-		NodeToObjsMap: nodeToObjsMap,
-		Names:         nodes.ConfigChanged,
-		Reason:        "configChanged",
-		GateCheck:     nullGate,
+		Names:     nodes.ConfigChanged,
+		Reason:    "configChanged",
+		GateCheck: nullGate,
 	}); len(part) > 0 {
 		nrtUpdates = append(nrtUpdates, part...)
 	}
@@ -383,10 +367,10 @@ func (ov *OverReserve) MakeNRTUpdates(ctx context.Context, lh_ logr.Logger, node
 }
 
 type nodeUpdatePool struct {
-	NodeToObjsMap map[string][]podData
-	Names         []string
-	Reason        string
-	GateCheck     func(lh logr.Logger, nrt *topologyv1alpha2.NodeResourceTopology) error
+	Names                []string
+	Reason               string
+	NeedPodsForGateCheck bool
+	GateCheck            func(lh logr.Logger, nrt *topologyv1alpha2.NodeResourceTopology, pods []podData) error
 }
 
 func (ov *OverReserve) makeNRTUpdatesForNodes(ctx context.Context, lh_ logr.Logger, rd ctrlclient.Reader, nodePool nodeUpdatePool) []nrtUpdate {
@@ -394,31 +378,32 @@ func (ov *OverReserve) makeNRTUpdatesForNodes(ctx context.Context, lh_ logr.Logg
 	for _, nodeName := range nodePool.Names {
 		lh := lh_.WithValues(logging.KeyNode, nodeName)
 
-		nrtCandidate := &topologyv1alpha2.NodeResourceTopology{}
-		if err := rd.Get(ctx, types.NamespacedName{Name: nodeName}, nrtCandidate); err != nil {
-			lh.V(2).Info("failed to get NodeTopology", "error", err)
-			continue
-		}
-		if nrtCandidate == nil {
-			lh.V(2).Info("missing NodeTopology")
+		collectPods := ov.preemptionMode == apiconfig.PreemptionEnabled || nodePool.NeedPodsForGateCheck
+		nrt, podDataList, err := ov.getNodeData(ctx, lh, nodeName, collectPods)
+		if err != nil {
+			lh.V(2).Error(err, "failed to get node data")
 			continue
 		}
 
-		if err := nodePool.GateCheck(lh, nrtCandidate); err != nil {
+		if err := nodePool.GateCheck(lh, nrt, podDataList); err != nil {
 			lh.V(2).Info("failed gate", "reason", err.Error())
 			continue
 		}
 
 		lh.V(4).Info("overriding cached info", "reason", nodePool.Reason)
-		nrtUpdate := nrtUpdate{
-			nrt: nrtCandidate,
-		}
-		if ov.preemptionMode == apiconfig.PreemptionEnabled {
-			nrtUpdate.pods = nodePool.NodeToObjsMap[nodeName]
-		}
-		nrtUpdates = append(nrtUpdates, nrtUpdate)
+		nrtUpdates = append(nrtUpdates, ov.nrtUpdateForFlush(nrt, podDataList))
 	}
 	return nrtUpdates
+}
+
+// nrtUpdateForFlush returns the nrtUpdate for flushing the cache.
+// If preemption is enabled we want to keep the pods information.
+// Otherwise we can drop to reduce unneeded storage
+func (ov *OverReserve) nrtUpdateForFlush(nrt *topologyv1alpha2.NodeResourceTopology, podsData []podData) nrtUpdate {
+	if ov.preemptionMode == apiconfig.PreemptionDisabled {
+		return nrtUpdate{nrt: nrt}
+	}
+	return nrtUpdate{nrt: nrt, pods: podsData}
 }
 
 // FlushNodes drops all the cached information about a given node, resetting its state clean.
@@ -462,6 +447,36 @@ func (ov *OverReserve) TestOnlyWatcherStatus() WatcherStatus {
 	return ov.nrtWatcher.TestOnlyWatcherStatus()
 }
 
+// getNodeData retrieves the node data for a given node name, if any error occurs, it returns nil data with the error.
+func (ov *OverReserve) getNodeData(ctx context.Context, lh_ logr.Logger, nodeName string, withPods bool) (*topologyv1alpha2.NodeResourceTopology, []podData, error) {
+	nrt := &topologyv1alpha2.NodeResourceTopology{}
+	if err := ov.client.Get(ctx, types.NamespacedName{Name: nodeName}, nrt); err != nil {
+		lh_.V(2).Error(err, "failed to get node's NRT")
+		return nil, nil, err
+	}
+
+	if !withPods {
+		return nrt, nil, nil
+	}
+
+	pods, err := ov.podLister.ListByNode(lh_, nodeName)
+	if err != nil {
+		lh_.V(2).Error(err, "failed to list node's pods")
+		return nil, nil, err
+	}
+
+	nrtResources := ov.nrtResNames.Get(nodeName)
+	podDataList := make([]podData, 0, len(pods))
+	for _, pod := range pods {
+		if ov.preemptionMode == apiconfig.PreemptionEnabled {
+			podDataList = append(podDataList, categorizePodForPreemption(pod, nrtResources))
+		} else {
+			podDataList = append(podDataList, categorizePod(pod, nrtResources))
+		}
+	}
+	return nrt, podDataList, nil
+}
+
 func categorizePod(pod *corev1.Pod, nrtResources sets.Set[corev1.ResourceName]) podData {
 	pd := podData{
 		Namespace: pod.Namespace,
@@ -501,30 +516,6 @@ func categorizePodForPreemption(pod *corev1.Pod, nrtResources sets.Set[corev1.Re
 		ret.PinnedContainers = append(ret.PinnedContainers, ctr.Name)
 	}
 	return ret
-}
-
-func makeNodeToPodDataMap(lh logr.Logger, podLister podlisterv1.PodLister, isPodRelevant podprovider.PodFilterFunc, nrtResourcesLookup NRTResourcesLookupFunc, preemptionMode apiconfig.PreemptionMode) (map[string][]podData, error) {
-	nodeToObjsMap := make(map[string][]podData)
-	pods, err := podLister.List(labels.Everything())
-	if err != nil {
-		return nodeToObjsMap, err
-	}
-	for _, pod := range pods {
-		if !isPodRelevant(lh, pod) {
-			continue
-		}
-		nrtResources := nrtResourcesLookup(pod.Spec.NodeName)
-		nodeObjs := nodeToObjsMap[pod.Spec.NodeName]
-		var pd podData
-		if preemptionMode == apiconfig.PreemptionEnabled {
-			pd = categorizePodForPreemption(pod, nrtResources)
-		} else {
-			pd = categorizePod(pod, nrtResources)
-		}
-		nodeObjs = append(nodeObjs, pd)
-		nodeToObjsMap[pod.Spec.NodeName] = nodeObjs
-	}
-	return nodeToObjsMap, nil
 }
 
 func getCacheResyncMethod(lh logr.Logger, cfg *apiconfig.NodeResourceTopologyCache) apiconfig.CacheResyncMethod {
@@ -578,4 +569,4 @@ func (ov *OverReserve) processNRTEvent(nrtEv NRTEvent, lh logr.Logger) int {
 	return 0
 }
 
-func nullGate(_ logr.Logger, _ *topologyv1alpha2.NodeResourceTopology) error { return nil }
+func nullGate(_ logr.Logger, _ *topologyv1alpha2.NodeResourceTopology, _ []podData) error { return nil }
