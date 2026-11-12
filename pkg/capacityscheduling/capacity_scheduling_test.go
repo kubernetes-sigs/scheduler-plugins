@@ -31,6 +31,7 @@ import (
 	apiruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/informers"
 	clientsetfake "k8s.io/client-go/kubernetes/fake"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/events"
 	extenderv1 "k8s.io/kube-scheduler/extender/v1"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
@@ -1241,12 +1242,20 @@ func TestDeleteElasticQuota(t *testing.T) {
 		name         string
 		ns           []string
 		elasticQuota *v1alpha1.ElasticQuota
+		tombstone    bool
 		expected     map[string]*ElasticQuotaInfo
 	}{
 		{
 			name:         "Delete ElasticQuota",
 			elasticQuota: makeEQ("ns1", "t1-eq1", makeResourceList(300, 1000), makeResourceList(10, 100)),
 			ns:           []string{"ns1"},
+			expected:     map[string]*ElasticQuotaInfo{},
+		},
+		{
+			name:         "Delete ElasticQuota delivered as DeletedFinalStateUnknown",
+			elasticQuota: makeEQ("ns1", "t1-eq1", makeResourceList(300, 1000), makeResourceList(10, 100)),
+			ns:           []string{"ns1"},
+			tombstone:    true,
 			expected:     map[string]*ElasticQuotaInfo{},
 		},
 	}
@@ -1277,7 +1286,11 @@ func TestDeleteElasticQuota(t *testing.T) {
 				fh:                fwk,
 			}
 			cs.addElasticQuota(tt.elasticQuota)
-			cs.deleteElasticQuota(tt.elasticQuota)
+			var obj interface{} = tt.elasticQuota
+			if tt.tombstone {
+				obj = cache.DeletedFinalStateUnknown{Key: tt.elasticQuota.Namespace + "/" + tt.elasticQuota.Name, Obj: tt.elasticQuota}
+			}
+			cs.deleteElasticQuota(obj)
 
 			for _, ns := range tt.ns {
 				if got := cs.elasticQuotaInfos[ns]; !reflect.DeepEqual(got, tt.expected[ns]) {
@@ -1487,6 +1500,7 @@ func TestDeletePod(t *testing.T) {
 		elasticQuota *v1alpha1.ElasticQuota
 		existingPods []*v1.Pod
 		deletePods   []*v1.Pod
+		tombstone    bool
 		expected     map[string]*ElasticQuotaInfo
 	}{
 		{
@@ -1556,6 +1570,40 @@ func TestDeletePod(t *testing.T) {
 				},
 			},
 		},
+		{
+			name:         "Delete one Pod delivered as DeletedFinalStateUnknown",
+			elasticQuota: makeEQ("ns1", "t1-eq1", makeResourceList(100, 1000), makeResourceList(10, 100)),
+			existingPods: []*v1.Pod{
+				makePod("t1-p1", "ns1", 100, 30, 0, midPriority, "t1-p1", "node-a"),
+				makePod("t1-p2", "ns1", 100, 30, 0, highPriority, "t1-p2", "node-a"),
+			},
+			deletePods: []*v1.Pod{
+				makePod("t1-p1", "ns1", 100, 30, 0, midPriority, "t1-p1", "node-a"),
+			},
+			ns:        []string{"ns1"},
+			tombstone: true,
+			expected: map[string]*ElasticQuotaInfo{
+				"ns1": {
+					Namespace: "ns1",
+					pods:      sets.New("t1-p2"),
+					Max: &framework.Resource{
+						MilliCPU: 100,
+						Memory:   1000,
+					},
+					Min: &framework.Resource{
+						MilliCPU: 10,
+						Memory:   100,
+					},
+					Used: &framework.Resource{
+						MilliCPU: 30,
+						Memory:   100,
+						ScalarResources: map[v1.ResourceName]int64{
+							ResourceGPU: 0,
+						},
+					},
+				},
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1588,7 +1636,11 @@ func TestDeletePod(t *testing.T) {
 				cs.addPod(existingpod)
 			}
 			for _, deletepod := range tt.deletePods {
-				cs.deletePod(deletepod)
+				var obj interface{} = deletepod
+				if tt.tombstone {
+					obj = cache.DeletedFinalStateUnknown{Key: deletepod.Namespace + "/" + deletepod.Name, Obj: deletepod}
+				}
+				cs.deletePod(obj)
 			}
 			for _, ns := range tt.ns {
 				if got := cs.elasticQuotaInfos[ns]; !reflect.DeepEqual(got, tt.expected[ns]) {
@@ -1653,4 +1705,27 @@ func makeRegisteredPlugin() []tf.RegisterPluginFunc {
 		}, "Filter", "PreFilter"),
 	}
 	return registeredPlugins
+}
+
+func TestDeleteHandlersIgnoreUnexpectedObjects(t *testing.T) {
+	eq := makeEQ("ns1", "t1-eq1", makeResourceList(100, 1000), makeResourceList(10, 100))
+	pod := makePod("t1-p1", "ns1", 100, 30, 0, midPriority, "t1-p1", "node-a")
+	objs := []interface{}{
+		"unexpected",
+		cache.DeletedFinalStateUnknown{Key: "ns1/unexpected", Obj: "unexpected"},
+	}
+	for _, obj := range objs {
+		cs := &CapacityScheduling{elasticQuotaInfos: map[string]*ElasticQuotaInfo{}}
+		cs.addElasticQuota(eq)
+		cs.addPod(pod)
+		cs.deletePod(obj)
+		cs.deleteElasticQuota(obj)
+		info := cs.elasticQuotaInfos["ns1"]
+		if info == nil {
+			t.Fatalf("%#v: ElasticQuota for ns1 was removed", obj)
+		}
+		if !info.pods.Has("t1-p1") {
+			t.Errorf("%#v: pod t1-p1 was removed from ElasticQuota for ns1", obj)
+		}
+	}
 }
