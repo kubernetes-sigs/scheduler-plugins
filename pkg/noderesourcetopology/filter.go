@@ -197,7 +197,7 @@ func (tm *TopologyMatch) Filter(ctx context.Context, cycleState fwk.CycleState, 
 	lh = lh.WithValues(logging.KeyGeneration, info.Generation)
 	if !info.Fresh {
 		lh.V(2).Info("invalid topology data")
-		return fwk.NewStatus(fwk.Unschedulable, "invalid node topology data")
+		return fwk.NewStatus(fwk.UnschedulableAndUnresolvable, "invalid node topology data")
 	}
 	if nodeTopology == nil {
 		return nil
@@ -216,7 +216,7 @@ func (tm *TopologyMatch) Filter(ctx context.Context, cycleState fwk.CycleState, 
 			if err != nil {
 				// valid NUMA placement info aligns with having a fresh PFP hence use OverReserved signal to resync with the PFP gate
 				tm.nrtCache.NodeMaybeOverReserved(nodeName, pod)
-				return fwk.NewStatus(fwk.Unschedulable, "eviction simulation in NRT is not possible: "+err.Error())
+				return fwk.NewStatus(fwk.UnschedulableAndUnresolvable, "eviction simulation in NRT is not possible: "+err.Error())
 			}
 			lh.V(4).Info("running with NRT modified by eviction simulation")
 		}
@@ -241,9 +241,18 @@ func (tm *TopologyMatch) Filter(ctx context.Context, cycleState fwk.CycleState, 
 		qos:             qos,
 	}
 	status := handler(lh, pod, &fi)
+
+	if status.IsRejected() && info.WithTerminatedPods {
+		// avoid false Unschedulable that could trigger preemption by returning a UnschedulableAndUnresolvable error
+		reasons := status.Reasons()
+		reasons = append(reasons, "node is marked with terminated same-profile pods")
+		status = fwk.NewStatus(fwk.UnschedulableAndUnresolvable, reasons...)
+	}
+
 	if !isPreemptionFlow && status != nil {
 		tm.nrtCache.NodeMaybeOverReserved(nodeName, pod)
 	}
+
 	return status
 }
 

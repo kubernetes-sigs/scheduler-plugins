@@ -170,6 +170,14 @@ const (
 	ForeignPodsDetectOnlyExclusiveResources ForeignPodsDetectMode = "OnlyExclusiveResources"
 )
 
+// TerminatedOwnPodsDetectMode is a "string" type.
+type TerminatedOwnPodsDetectMode string
+
+const (
+	TerminatedOwnPodsDetectNone                   TerminatedOwnPodsDetectMode = "None"
+	TerminatedOwnPodsDetectOnlyExclusiveResources TerminatedOwnPodsDetectMode = "OnlyExclusiveResources"
+)
+
 // CacheResyncMethod is a "string" type.
 type CacheResyncMethod string
 
@@ -218,6 +226,15 @@ type NodeResourceTopologyCache struct {
 	// Has no effect if caching is disabled (CacheResyncPeriod is zero) or if DiscardReservedNodes
 	// is enabled. If unspecified, default is "All". Use "None" to disable.
 	ForeignPodsDetect *ForeignPodsDetectMode `json:"foreignPodsDetect,omitempty"`
+	// TerminatedOwnPodsDetect sets how deletion of pods scheduled by this profile should be handled
+	// for NRT cache consistency. When exclusive-resource pods terminate, the cache may still reflect
+	// their resources as consumed until the next successful resync. Detection restores assumed overlays
+	// when possible, otherwise marks the node so Filter failures become UnschedulableAndUnresolvable
+	// and avoid false preemption. True capacity shortages on that node are also non-preemptable until
+	// flush. It improves pod scheduling by avoiding an extra cycle to refresh the cache. Has no effect
+	// if caching is disabled (CacheResyncPeriod is zero) or if DiscardReservedNodes
+	// is enabled. Defaults to "None". Set to "OnlyExclusiveResources" to enable.
+	TerminatedOwnPodsDetect *TerminatedOwnPodsDetectMode `json:"terminatedOwnPodsDetect,omitempty"`
 	// ResyncMethod sets how the resync behaves to compute the expected node state.
 	// "All" consider all pods to compute the node state. "OnlyExclusiveResources" consider
 	// only pods regardless of their QoS which have exclusive resources assigned to their

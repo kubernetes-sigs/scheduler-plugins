@@ -158,6 +158,50 @@ func TestGetForeignPodsDetectMode(t *testing.T) {
 	}
 }
 
+func TestGetTerminatedOwnPodsDetectMode(t *testing.T) {
+	detectNone := apiconfig.TerminatedOwnPodsDetectNone
+	detectOnlyExclusiveResources := apiconfig.TerminatedOwnPodsDetectOnlyExclusiveResources
+
+	testCases := []struct {
+		description string
+		cfg         *apiconfig.NodeResourceTopologyCache
+		expected    apiconfig.TerminatedOwnPodsDetectMode
+	}{
+		{
+			description: "nil config",
+			expected:    apiconfig.TerminatedOwnPodsDetectNone,
+		},
+		{
+			description: "empty config",
+			cfg:         &apiconfig.NodeResourceTopologyCache{},
+			expected:    apiconfig.TerminatedOwnPodsDetectNone,
+		},
+		{
+			description: "explicit disable",
+			cfg: &apiconfig.NodeResourceTopologyCache{
+				TerminatedOwnPodsDetect: &detectNone,
+			},
+			expected: apiconfig.TerminatedOwnPodsDetectNone,
+		},
+		{
+			description: "explicit OnlyExclusiveResources",
+			cfg: &apiconfig.NodeResourceTopologyCache{
+				TerminatedOwnPodsDetect: &detectOnlyExclusiveResources,
+			},
+			expected: apiconfig.TerminatedOwnPodsDetectOnlyExclusiveResources,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.description, func(t *testing.T) {
+			got := getTerminatedOwnPodsDetectMode(testr.New(t), testCase.cfg)
+			if got != testCase.expected {
+				t.Errorf("terminated own-pods detect mode got %v expected %v", got, testCase.expected)
+			}
+		})
+	}
+}
+
 func TestGetPreemptionMode(t *testing.T) {
 	preemptionEnabled := apiconfig.PreemptionEnabled
 	preemptionDisabled := apiconfig.PreemptionDisabled

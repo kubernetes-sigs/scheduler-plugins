@@ -184,9 +184,10 @@ profiles:
 									Resources: []schedconfig.ResourceSpec{{Name: "cpu", Weight: 1}, {Name: "memory", Weight: 1}},
 								},
 								Cache: &config.NodeResourceTopologyCache{
-									ForeignPodsDetect: ptr.To(config.ForeignPodsDetectAll),
-									ResyncMethod:      ptr.To(config.CacheResyncAutodetect),
-									InformerMode:      ptr.To(config.CacheInformerDedicated),
+									ForeignPodsDetect:       ptr.To(config.ForeignPodsDetectAll),
+									TerminatedOwnPodsDetect: ptr.To(config.TerminatedOwnPodsDetectNone),
+									ResyncMethod:            ptr.To(config.CacheResyncAutodetect),
+									InformerMode:            ptr.To(config.CacheInformerDedicated),
 								},
 								PreemptionMode: ptr.To(config.PreemptionDisabled),
 							},
