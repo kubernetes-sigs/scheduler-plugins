@@ -92,6 +92,10 @@ type CachedNRTInfo struct {
 	// If true, the data is fresh and ready to be consumed.
 	// If false, the data is stale and the caller need to wait for a future refresh.
 	Fresh bool
+
+	// WithTerminatedPods signals that the node is marked with terminated same-profile pods. This is used to
+	// avoid false Unschedulable that could trigger preemption, and instead the Filter returns a UnschedulableAndUnresolvable error.
+	WithTerminatedPods bool
 }
 
 type Interface interface {

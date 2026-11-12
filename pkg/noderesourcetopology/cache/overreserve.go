@@ -63,15 +63,18 @@ type OverReserve struct {
 	// to resync nodes. See The documentation of Resync() below for more details.
 	nodesMaybeOverreserved counter
 	nodesWithForeignPods   counter
-	nodesWithAttrUpdate    counter
-	podLister              podprovider.Lister
-	resyncMethod           apiconfig.CacheResyncMethod
-	resyncScope            apiconfig.CacheResyncScope
-	preemptionMode         apiconfig.PreemptionMode
-	nrtUpdateCh            chan NRTEvent
-	watchCancel            context.CancelFunc
-	nrtWatcher             *Watcher
-	closeOnce              sync.Once
+	// nodesWithTerminatedPods counts how many times the node is marked with terminated same-profile pods. This is used to
+	// avoid false Unschedulable that could trigger preemption, and instead the Filter returns a UnschedulableAndUnresolvable error.
+	nodesWithTerminatedPods counter
+	nodesWithAttrUpdate     counter
+	podLister               podprovider.Lister
+	resyncMethod            apiconfig.CacheResyncMethod
+	resyncScope             apiconfig.CacheResyncScope
+	preemptionMode          apiconfig.PreemptionMode
+	nrtUpdateCh             chan NRTEvent
+	watchCancel             context.CancelFunc
+	nrtWatcher              *Watcher
+	closeOnce               sync.Once
 }
 
 func NewOverReserve(
@@ -97,19 +100,20 @@ func NewOverReserve(
 	lh.V(2).Info("initializing", "noderesourcetopologies", len(nrtObjs.Items), "method", resyncMethod, "scope", resyncScope)
 	watcherCtx, watchCancel := context.WithCancel(ctx)
 	obj := &OverReserve{
-		lh:                     lh,
-		client:                 client,
-		nrts:                   newNrtStore(lh, nrtObjs.Items),
-		nrtResNames:            newNrtResourcesStore(nrtObjs.Items),
-		assumedResources:       make(map[string]*resourceStore),
-		nodesMaybeOverreserved: newCounter(),
-		nodesWithForeignPods:   newCounter(),
-		nodesWithAttrUpdate:    newCounter(),
-		nrtUpdateCh:            make(chan NRTEvent, defaultMaxNRTUpdates),
-		podLister:              podLister,
-		resyncMethod:           resyncMethod,
-		preemptionMode:         preemptionMode,
-		watchCancel:            watchCancel,
+		lh:                      lh,
+		client:                  client,
+		nrts:                    newNrtStore(lh, nrtObjs.Items),
+		nrtResNames:             newNrtResourcesStore(nrtObjs.Items),
+		assumedResources:        make(map[string]*resourceStore),
+		nodesMaybeOverreserved:  newCounter(),
+		nodesWithForeignPods:    newCounter(),
+		nodesWithTerminatedPods: newCounter(),
+		nodesWithAttrUpdate:     newCounter(),
+		nrtUpdateCh:             make(chan NRTEvent, defaultMaxNRTUpdates),
+		podLister:               podLister,
+		resyncMethod:            resyncMethod,
+		preemptionMode:          preemptionMode,
+		watchCancel:             watchCancel,
 	}
 
 	if resyncScope == apiconfig.CacheResyncScopeAll {
@@ -131,6 +135,7 @@ func (ov *OverReserve) GetCachedNRTCopy(ctx context.Context, nodeName string, po
 	}
 
 	info.Fresh = true
+	info.WithTerminatedPods = ov.nodesWithTerminatedPods.IsSet(nodeName)
 	nrt := ov.nrts.GetNRTCopyByNodeName(nodeName)
 	if nrt == nil {
 		return nil, info
@@ -211,6 +216,32 @@ func (ov *OverReserve) UnreserveNodeResources(nodeName string, pod *corev1.Pod) 
 
 func (ov *OverReserve) PostBind(nodeName string, pod *corev1.Pod) {}
 
+// RemoveAssumedPodOnTermination handles deletion of an own-profile pod that requested
+// exclusive resources: if the pod is still tracked in assumedResources, clear that overlay,
+// otherwise mark the node WithTerminatedPods.
+func (ov *OverReserve) RemoveAssumedPodOnTermination(nodeName string, pod *corev1.Pod) {
+	lh := ov.lh.WithValues(logging.KeyPod, klog.KObj(pod), logging.KeyPodUID, logging.PodUID(pod), logging.KeyNode, nodeName)
+	ov.lock.Lock()
+	defer ov.lock.Unlock()
+
+	had := false
+	if nodeAssumedResources, ok := ov.assumedResources[nodeName]; ok {
+		had = nodeAssumedResources.DeletePod(pod)
+	}
+
+	if had {
+		lh.V(2).Info("cleared assumed resources for terminated pod", "hadAssumedEntry", true)
+		return
+	}
+
+	if !ov.nrts.Contains(nodeName) {
+		lh.V(5).Info("ignoring terminated pod without node entry", "nrtinfo", "missing")
+		return
+	}
+	val := ov.nodesWithTerminatedPods.Incr(nodeName)
+	lh.V(2).Info("terminated pod not in assumed; mark node WithTerminatedPods until resync", "count", val)
+}
+
 // Close is safe to call multiple times and concurrently: sync.Once
 // guarantees the shutdown sequence runs exactly once and it is then idempotent
 func (ov *OverReserve) Close() {
@@ -268,6 +299,10 @@ func (ov *OverReserve) GetDesyncedNodes(lh logr.Logger) DesyncedNodes {
 	// still correct.
 	nodes := ov.nodesWithForeignPods.Clone()
 	foreignCount := nodes.Len()
+	terminatedCount := ov.nodesWithTerminatedPods.Len()
+	for _, node := range ov.nodesWithTerminatedPods.Keys() {
+		nodes.Incr(node)
+	}
 
 	overreservedCount := ov.nodesMaybeOverreserved.Len()
 	for _, node := range ov.nodesMaybeOverreserved.Keys() {
@@ -279,7 +314,7 @@ func (ov *OverReserve) GetDesyncedNodes(lh logr.Logger) DesyncedNodes {
 	configChangeCount := configChangeNodes.Len()
 
 	if nodes.Len() > 0 {
-		lh.V(4).Info("found dirty nodes", "foreign", foreignCount, "discarded", overreservedCount, "configChange", configChangeCount, "total", nodes.Len())
+		lh.V(4).Info("found dirty nodes", "foreign", foreignCount, "terminated", terminatedCount, "discarded", overreservedCount, "configChange", configChangeCount, "total", nodes.Len())
 	}
 	return DesyncedNodes{
 		Generation:        ov.generation,
@@ -422,6 +457,7 @@ func (ov *OverReserve) FlushNodes(lh logr.Logger, nrtUpdates ...nrtUpdate) uint6
 		delete(ov.assumedResources, nrtUpdate.nrt.Name)
 		ov.nodesMaybeOverreserved.Delete(nrtUpdate.nrt.Name)
 		ov.nodesWithForeignPods.Delete(nrtUpdate.nrt.Name)
+		ov.nodesWithTerminatedPods.Delete(nrtUpdate.nrt.Name)
 		ov.nodesWithAttrUpdate.Delete(nrtUpdate.nrt.Name)
 	}
 

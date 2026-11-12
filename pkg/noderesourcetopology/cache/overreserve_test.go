@@ -1877,3 +1877,126 @@ func TestOverresevedGetCachedNRTCopyWithForeignPods(t *testing.T) {
 		t.Errorf("cached data reported fresh when node has foreign pods")
 	}
 }
+
+func TestRemoveAssumedPodOnTermination(t *testing.T) {
+	fakeClient, err := tu.NewFakeClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+	nrtCache := mustOverReserve(t, fakeClient, &fakePodLister{})
+	nodeTopologies := makeDefaultTestTopology()
+	for _, obj := range nodeTopologies {
+		nrtCache.TestOnlyUpdateNRT(obj)
+	}
+	const nodeName = "node1"
+	ctx := context.Background()
+	lh := testr.New(t)
+
+	exclusiveTestPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Name: "cnt",
+					Resources: corev1.ResourceRequirements{
+						Limits: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("8"),
+							corev1.ResourceMemory: resource.MustParse("16Gi"),
+						},
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("8"),
+							corev1.ResourceMemory: resource.MustParse("16Gi"),
+						},
+					},
+				},
+			},
+		},
+	}
+	t.Run("clears assumed overlay without WithTerminatedPods", func(t *testing.T) {
+		pod := exclusiveTestPod.DeepCopy()
+		nrtCache.ReserveNodeResources(nodeName, exclusiveTestPod)
+
+		nrtAfterReserve, infoAfterReserve := nrtCache.GetCachedNRTCopy(ctx, nodeName, pod)
+		if nrtAfterReserve == nil || !infoAfterReserve.Fresh {
+			t.Fatalf("expected fresh NRT after reserve")
+		}
+		if infoAfterReserve.WithTerminatedPods {
+			t.Fatalf("WithTerminatedPods should be false after reserve")
+		}
+
+		nrtCache.RemoveAssumedPodOnTermination(nodeName, pod)
+
+		nrtAfter, info := nrtCache.GetCachedNRTCopy(ctx, nodeName, pod)
+		if !info.Fresh {
+			t.Fatalf("expected node to stay Fresh after clearing assumed")
+		}
+		if info.WithTerminatedPods {
+			t.Fatalf("assumed-hit path must not set WithTerminatedPods")
+		}
+		if !isNRTEqual(nrtAfter, nodeTopologies[0]) {
+			t.Fatalf("expected assumed overlay cleared\ngot: %s\nwant: %s", dumpNRT(nrtAfter), dumpNRT(nodeTopologies[0]))
+		}
+		desynced := nrtCache.GetDesyncedNodes(lh)
+		for _, n := range desynced.MaybeOverReserved {
+			if n == nodeName {
+				// this is deferred to the Filter instead of requesting a resync when not needed for other pods scheduling cycles
+				t.Fatalf("assumed-hit must not dirty node for resync, got %v", desynced.MaybeOverReserved)
+			}
+		}
+	})
+
+	t.Run("marks WithTerminatedPods when not in assumed", func(t *testing.T) {
+		pod := exclusiveTestPod.DeepCopy()
+		nrtCache.RemoveAssumedPodOnTermination(nodeName, pod)
+
+		_, info := nrtCache.GetCachedNRTCopy(ctx, nodeName, pod)
+		if !info.Fresh {
+			t.Fatalf("expected Fresh=true with WithTerminatedPods")
+		}
+		if !info.WithTerminatedPods {
+			t.Fatalf("expected WithTerminatedPods when pod not in assumed")
+		}
+		desynced := nrtCache.GetDesyncedNodes(lh)
+		found := false
+		for _, n := range desynced.MaybeOverReserved {
+			if n == nodeName {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("terminated mark should make node desynced, got %v", desynced.MaybeOverReserved)
+		}
+	})
+
+	t.Run("FlushNodes clears WithTerminatedPods", func(t *testing.T) {
+		pod := exclusiveTestPod.DeepCopy()
+		nrtCache.RemoveAssumedPodOnTermination(nodeName, pod)
+		_, info := nrtCache.GetCachedNRTCopy(ctx, nodeName, pod)
+		if !info.WithTerminatedPods {
+			t.Fatalf("precondition: expected WithTerminatedPods")
+		}
+
+		nrtCache.FlushNodes(lh, nrtUpdate{nrt: nodeTopologies[0].DeepCopy()})
+
+		_, info = nrtCache.GetCachedNRTCopy(ctx, nodeName, pod)
+		if info.WithTerminatedPods {
+			t.Fatalf("FlushNodes should clear WithTerminatedPods")
+		}
+		desynced := nrtCache.GetDesyncedNodes(lh)
+		for _, n := range desynced.MaybeOverReserved {
+			if n == nodeName {
+				t.Fatalf("node should not stay desynced after flush, got %v", desynced.MaybeOverReserved)
+			}
+		}
+	})
+
+	t.Run("ignores missing nrt node", func(t *testing.T) {
+		pod := exclusiveTestPod.DeepCopy()
+		nrtCache.RemoveAssumedPodOnTermination("ghost-node", pod)
+		_, info := nrtCache.GetCachedNRTCopy(ctx, "ghost-node", pod)
+		if info.WithTerminatedPods {
+			t.Fatalf("missing NRT node must not be marked WithTerminatedPods")
+		}
+	})
+}

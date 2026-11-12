@@ -70,7 +70,7 @@ func initNodeTopologyInformer(ctx context.Context, lh logr.Logger,
 		return nil, err
 	}
 
-	initNodeTopologyForeignPodsDetection(lh, tcfg.Cache, handle, podSharedInformer, nrtCache)
+	initNodeTopologyPodDetection(lh, tcfg.Cache, handle, podSharedInformer, nrtCache)
 
 	resyncPeriod := time.Duration(tcfg.CacheResyncPeriodSeconds) * time.Second
 	go wait.Forever(nrtCache.Resync, resyncPeriod)
@@ -80,29 +80,46 @@ func initNodeTopologyInformer(ctx context.Context, lh logr.Logger,
 	return nrtCache, nil
 }
 
-func initNodeTopologyForeignPodsDetection(lh logr.Logger, cfg *apiconfig.NodeResourceTopologyCache, handle fwk.Handle, podSharedInformer k8scache.SharedInformer, nrtCache *nrtcache.OverReserve) {
+func initNodeTopologyPodDetection(lh logr.Logger, cfg *apiconfig.NodeResourceTopologyCache, handle fwk.Handle, podSharedInformer k8scache.SharedInformer, nrtCache *nrtcache.OverReserve) {
 	foreignPodsDetect := getForeignPodsDetectMode(lh, cfg)
+	terminatedOwnPodsDetect := getTerminatedOwnPodsDetectMode(lh, cfg)
 
-	if foreignPodsDetect == apiconfig.ForeignPodsDetectNone {
+	foreignEnabled := foreignPodsDetect != apiconfig.ForeignPodsDetectNone
+	if !foreignEnabled {
 		lh.Info("foreign pods detection disabled by configuration")
+	}
+	terminatedEnabled := terminatedOwnPodsDetect != apiconfig.TerminatedOwnPodsDetectNone
+	if !terminatedEnabled {
+		lh.Info("terminated own-pods detection disabled by configuration")
+	}
+	if !foreignEnabled && !terminatedEnabled {
 		return
 	}
+
 	fwk, ok := handle.(framework.Framework)
 	if !ok {
-		lh.Info("cannot determine the scheduler profile names - no foreign pod detection enabled")
+		lh.Info("cannot determine the scheduler profile name - no pod detection handlers enabled")
 		return
 	}
 
 	profileName := fwk.ProfileName()
-	lh.Info("setting up foreign pods detection", "name", profileName, "mode", foreignPodsDetect)
-
-	if foreignPodsDetect == apiconfig.ForeignPodsDetectOnlyExclusiveResources {
-		nrtcache.TrackOnlyForeignPodsWithExclusiveResources()
-	} else {
-		nrtcache.TrackAllForeignPods()
+	if foreignEnabled {
+		lh.Info("setting up foreign pods detection", "name", profileName, "mode", foreignPodsDetect)
+		if foreignPodsDetect == apiconfig.ForeignPodsDetectOnlyExclusiveResources {
+			nrtcache.TrackOnlyForeignPodsWithExclusiveResources()
+		} else {
+			nrtcache.TrackAllForeignPods()
+		}
+		nrtcache.RegisterSchedulerProfileName(lh.WithName(logging.SubsystemForeignPods), profileName)
 	}
-	nrtcache.RegisterSchedulerProfileName(lh.WithName(logging.SubsystemForeignPods), profileName)
-	nrtcache.SetupForeignPodsDetector(lh.WithName(logging.SubsystemForeignPods), profileName, podSharedInformer, nrtCache)
+	if terminatedEnabled {
+		lh.Info("setting up terminated own-pods detection", "name", profileName, "mode", terminatedOwnPodsDetect)
+	}
+
+	nrtcache.SetupPodCacheHandlers(lh.WithName(logging.SubsystemNRTCache), profileName, podSharedInformer, nrtCache, nrtcache.PodCacheHandlersOpts{
+		ForeignPodsDetect:       foreignEnabled,
+		TerminatedOwnPodsDetect: terminatedEnabled,
+	})
 }
 
 func createNUMANodeList(lh logr.Logger, zones topologyv1alpha2.ZoneList) NUMANodeList {
@@ -184,6 +201,17 @@ func getForeignPodsDetectMode(lh logr.Logger, cfg *apiconfig.NodeResourceTopolog
 		lh.Info("foreign pods detection value missing", "fallback", foreignPodsDetect)
 	}
 	return foreignPodsDetect
+}
+
+func getTerminatedOwnPodsDetectMode(lh logr.Logger, cfg *apiconfig.NodeResourceTopologyCache) apiconfig.TerminatedOwnPodsDetectMode {
+	var terminatedOwnPodsDetect apiconfig.TerminatedOwnPodsDetectMode
+	if cfg != nil && cfg.TerminatedOwnPodsDetect != nil {
+		terminatedOwnPodsDetect = *cfg.TerminatedOwnPodsDetect
+	} else {
+		terminatedOwnPodsDetect = apiconfig.TerminatedOwnPodsDetectNone
+		lh.Info("terminated own-pods detection value missing", "fallback", terminatedOwnPodsDetect)
+	}
+	return terminatedOwnPodsDetect
 }
 
 func getPreemptionMode(lh logr.Logger, tcfg *apiconfig.NodeResourceTopologyMatchArgs) apiconfig.PreemptionMode {
