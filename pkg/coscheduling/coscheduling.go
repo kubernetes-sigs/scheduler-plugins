@@ -127,17 +127,18 @@ func (cs *Coscheduling) Name() string {
 }
 
 // Less is used to sort pods in the scheduling queue in the following order.
-// 1. Compare the priorities of Pods.
-// 2. Compare the initialization timestamps of PodGroups or Pods.
-// 3. Compare the keys of PodGroups/Pods: <namespace>/<podname>.
+//  1. Compare the priorities of Pods.
+//  2. Compare the creation timestamps of PodGroups (or their last scheduling failure
+//     timestamps), or the enqueue timestamps of Pods that don't belong to an existing PodGroup.
+//  3. Compare the keys of PodGroups/Pods: <namespace>/<podname>.
 func (cs *Coscheduling) Less(podInfo1, podInfo2 fwk.QueuedPodInfo) bool {
 	prio1 := corev1helpers.PodPriority(podInfo1.GetPodInfo().GetPod())
 	prio2 := corev1helpers.PodPriority(podInfo2.GetPodInfo().GetPod())
 	if prio1 != prio2 {
 		return prio1 > prio2
 	}
-	creationTime1 := cs.pgMgr.GetCreationTimestamp(context.TODO(), podInfo1.GetPodInfo().GetPod(), *podInfo1.GetInitialAttemptTimestamp())
-	creationTime2 := cs.pgMgr.GetCreationTimestamp(context.TODO(), podInfo2.GetPodInfo().GetPod(), *podInfo2.GetInitialAttemptTimestamp())
+	creationTime1 := cs.pgMgr.GetCreationTimestamp(context.TODO(), podInfo1.GetPodInfo().GetPod(), podInfo1.GetTimestamp())
+	creationTime2 := cs.pgMgr.GetCreationTimestamp(context.TODO(), podInfo2.GetPodInfo().GetPod(), podInfo2.GetTimestamp())
 	if creationTime1.Equal(creationTime2) {
 		return core.GetNamespacedName(podInfo1.GetPodInfo().GetPod()) < core.GetNamespacedName(podInfo2.GetPodInfo().GetPod())
 	}
