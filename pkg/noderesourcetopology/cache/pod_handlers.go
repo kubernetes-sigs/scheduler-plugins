@@ -70,8 +70,17 @@ func SetupPodCacheHandlers(lh logr.Logger, profileName string, podInformer k8sca
 	onDelete := func(obj interface{}) {
 		pod, ok := obj.(*corev1.Pod)
 		if !ok {
-			lh.V(3).Info("unsupported object", "kind", fmt.Sprintf("%T", obj))
-			return
+			// Informer may deliver Delete as DeletedFinalStateUnknown after watch gaps.
+			tombstone, ok := obj.(k8scache.DeletedFinalStateUnknown)
+			if !ok {
+				lh.V(3).Info("unsupported object", "kind", fmt.Sprintf("%T", obj))
+				return
+			}
+			pod, ok = tombstone.Obj.(*corev1.Pod)
+			if !ok {
+				lh.V(3).Info("unsupported object", "kind", fmt.Sprintf("%T", obj))
+				return
+			}
 		}
 		if pod.Spec.NodeName == "" {
 			return
