@@ -43,11 +43,11 @@ command.
 ## How to debug
 By default, debug information is stripped, to keep it in the binary you need to remove -w command line option from
 ldflags in the Makefile.
-You can run all unit tests by **make unit-test** command or if you would like to run exact unit test
+You can run all unit tests with **make unit-test**, or run a specific unit test by name:
 ```shell
-GOFLAGS="-v" go test ./pkg/util/podgroup.go ./pkg/util/constants.go ./pkg/util/podgroup_test.go
+go test -v ./pkg/util -run '^TestCreateMergePatch$'
 ```
--v in GOFLAGS was used for verbosity
+The `-v` flag enables verbose output.
 You can also run integration test locally, but etcd port 2379 on your system should be free.
 ```shell
 make integration-test
