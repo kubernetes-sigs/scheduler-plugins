@@ -28,6 +28,7 @@ The kube-scheduler binary includes the below list of plugins. They can be config
 
 * [Capacity Scheduling](pkg/capacityscheduling/README.md)
 * [Coscheduling](pkg/coscheduling/README.md)
+* [High Load Filter](pkg/highloadfilter/README.md)
 * [Node Resources](pkg/noderesources/README.md)
 * [Node Resource Topology](pkg/noderesourcetopology/README.md)
 * [Preemption Toleration](pkg/preemptiontoleration/README.md)

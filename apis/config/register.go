@@ -46,6 +46,8 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 		&SySchedArgs{},
 		&PeaksArgs{},
 		&NodeMetadataArgs{},
+
+		&HighLoadFilterArgs{},
 	)
 	return nil
 }
