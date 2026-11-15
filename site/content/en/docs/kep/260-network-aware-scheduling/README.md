@@ -73,7 +73,7 @@ We propose two **Network-Aware Scheduling Plugins** for Kubernetes that focus on
 and ensuring bandwidth reservations in pod scheduling.
 
 This work significantly extends the previous work open-sourced [here](https://github.com/jpedro1992/sfc-controller)
-that implements a latency-aware scheduler extender based on the [scheduler extender](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/scheduling/scheduler_extender.md) design.
+that implements a latency-aware scheduler extender based on the [scheduler extender](https://github.com/kubernetes/design-proposals-archive/blob/main/scheduling/scheduler_extender.md) design.
 
 ## Goals
 

@@ -146,8 +146,8 @@ Hence, proper cluster configuration is expected from the cluster admins, or to o
 
 Should the cluster need to have different settings (e.g. topology manager) or NUMA topologies, we recommend to use the
 [standard kubernetes tools](https://kubernetes.io/blog/2017/03/advanced-scheduling-in-kubernetes/) to identify each set of nodes
-using [affinity](https://kubernetes.io/docs/user-guide/node-selection/#node-affinity-beta-feature) or also
-[taints](https://kubernetes.io/docs/user-guide/node-selection/#taints-and-toleations-beta-feature).
+using [affinity](https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#node-affinity) or also
+[taints](https://kubernetes.io/docs/concepts/scheduling-eviction/taint-and-toleration/).
 
 #### Topology Manager configuration
 
