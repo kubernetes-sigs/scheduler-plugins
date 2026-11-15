@@ -109,7 +109,21 @@ func (p *PodAssignEventHandler) OnUpdate(oldObj, newObj interface{}) {
 
 func (p *PodAssignEventHandler) OnDelete(obj interface{}) {
 	logger := klog.FromContext(context.TODO())
-	pod := obj.(*v1.Pod)
+	var pod *v1.Pod
+	switch t := obj.(type) {
+	case *v1.Pod:
+		pod = t
+	case clientcache.DeletedFinalStateUnknown:
+		var ok bool
+		pod, ok = t.Obj.(*v1.Pod)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("unable to convert object %T to *v1.Pod", t.Obj))
+			return
+		}
+	default:
+		utilruntime.HandleError(fmt.Errorf("unable to handle object: %T", obj))
+		return
+	}
 	nodeName := pod.Spec.NodeName
 	p.Lock()
 	defer p.Unlock()
