@@ -219,24 +219,24 @@ func TestLess(t *testing.T) {
 		{
 			name: "equal priority. p1 is added to schedulingQ earlier than p2",
 			p1: &framework.QueuedPodInfo{
-				PodInfo:                 tu.MustNewPodInfo(t, st.MakePod().Name("p1").Namespace("ns1").Priority(highPriority).Obj()),
-				InitialAttemptTimestamp: ptrTime(now.Add(time.Second * 1)),
+				PodInfo:   tu.MustNewPodInfo(t, st.MakePod().Name("p1").Namespace("ns1").Priority(highPriority).Obj()),
+				Timestamp: now.Add(time.Second * 1),
 			},
 			p2: &framework.QueuedPodInfo{
-				PodInfo:                 tu.MustNewPodInfo(t, st.MakePod().Name("p2").Namespace("ns2").Priority(highPriority).Obj()),
-				InitialAttemptTimestamp: ptrTime(now.Add(time.Second * 2)),
+				PodInfo:   tu.MustNewPodInfo(t, st.MakePod().Name("p2").Namespace("ns2").Priority(highPriority).Obj()),
+				Timestamp: now.Add(time.Second * 2),
 			},
 			want: true,
 		},
 		{
 			name: "equal priority. p2 is added to schedulingQ earlier than p1",
 			p1: &framework.QueuedPodInfo{
-				PodInfo:                 tu.MustNewPodInfo(t, st.MakePod().Name("p1").Namespace("ns1").Priority(highPriority).Obj()),
-				InitialAttemptTimestamp: ptrTime(now.Add(time.Second * 2)),
+				PodInfo:   tu.MustNewPodInfo(t, st.MakePod().Name("p1").Namespace("ns1").Priority(highPriority).Obj()),
+				Timestamp: now.Add(time.Second * 2),
 			},
 			p2: &framework.QueuedPodInfo{
-				PodInfo:                 tu.MustNewPodInfo(t, st.MakePod().Name("p2").Namespace("ns2").Priority(highPriority).Obj()),
-				InitialAttemptTimestamp: ptrTime(now.Add(time.Second * 1)),
+				PodInfo:   tu.MustNewPodInfo(t, st.MakePod().Name("p2").Namespace("ns2").Priority(highPriority).Obj()),
+				Timestamp: now.Add(time.Second * 1),
 			},
 			want: false,
 		},
@@ -273,11 +273,11 @@ func TestLess(t *testing.T) {
 			p1: &framework.QueuedPodInfo{
 				PodInfo: tu.MustNewPodInfo(t, st.MakePod().Name("p1").Namespace("ns1").Priority(highPriority).
 					Label(v1alpha1.PodGroupLabel, "pg1").Obj()),
-				InitialAttemptTimestamp: ptrTime(now.Add(time.Second * 1)),
+				Timestamp: now.Add(time.Second * 1),
 			},
 			p2: &framework.QueuedPodInfo{
-				PodInfo:                 tu.MustNewPodInfo(t, st.MakePod().Name("p2").Namespace("ns2").Priority(highPriority).Obj()),
-				InitialAttemptTimestamp: ptrTime(now.Add(time.Second * 2)),
+				PodInfo:   tu.MustNewPodInfo(t, st.MakePod().Name("p2").Namespace("ns2").Priority(highPriority).Obj()),
+				Timestamp: now.Add(time.Second * 2),
 			},
 			pgs: []*v1alpha1.PodGroup{
 				tu.MakePodGroup().Name("pg1").Namespace("ns1").Time(now.Add(time.Second * 1)).Obj(),
@@ -289,11 +289,11 @@ func TestLess(t *testing.T) {
 			p1: &framework.QueuedPodInfo{
 				PodInfo: tu.MustNewPodInfo(t, st.MakePod().Name("p1").Namespace("ns1").Priority(highPriority).
 					Label(v1alpha1.PodGroupLabel, "pg1").Obj()),
-				InitialAttemptTimestamp: ptrTime(now.Add(time.Second * 2)),
+				Timestamp: now.Add(time.Second * 2),
 			},
 			p2: &framework.QueuedPodInfo{
-				PodInfo:                 tu.MustNewPodInfo(t, st.MakePod().Name("p2").Namespace("ns2").Priority(highPriority).Obj()),
-				InitialAttemptTimestamp: ptrTime(now.Add(time.Second * 1)),
+				PodInfo:   tu.MustNewPodInfo(t, st.MakePod().Name("p2").Namespace("ns2").Priority(highPriority).Obj()),
+				Timestamp: now.Add(time.Second * 1),
 			},
 			pgs: []*v1alpha1.PodGroup{
 				tu.MakePodGroup().Name("pg1").Namespace("ns1").Time(now.Add(time.Second * 2)).Obj(),
@@ -337,12 +337,12 @@ func TestLess(t *testing.T) {
 			p1: &framework.QueuedPodInfo{
 				PodInfo: tu.MustNewPodInfo(t, st.MakePod().Name("p1").Namespace("ns1").Priority(highPriority).
 					Label(v1alpha1.PodGroupLabel, "pg1").Obj()),
-				InitialAttemptTimestamp: ptrTime(now.Add(time.Second * 1)),
+				Timestamp: now.Add(time.Second * 1),
 			},
 			p2: &framework.QueuedPodInfo{
 				PodInfo: tu.MustNewPodInfo(t, st.MakePod().Name("p2").Namespace("ns2").Priority(highPriority).
 					Label(v1alpha1.PodGroupLabel, "pg2").Obj()),
-				InitialAttemptTimestamp: ptrTime(now.Add(time.Second * 2)),
+				Timestamp: now.Add(time.Second * 2),
 			},
 			pgs: []*v1alpha1.PodGroup{
 				tu.MakePodGroup().Name("pg1").Namespace("ns1").Time(now.Add(time.Second * 1)).Obj(),
@@ -355,12 +355,12 @@ func TestLess(t *testing.T) {
 			p1: &framework.QueuedPodInfo{
 				PodInfo: tu.MustNewPodInfo(t, st.MakePod().Name("p1").Namespace("ns").Priority(lowPriority).
 					Label(v1alpha1.PodGroupLabel, "pg2").Obj()),
-				InitialAttemptTimestamp: ptrTime(now.Add(time.Second * 1)),
+				Timestamp: now.Add(time.Second * 1),
 			},
 			p2: &framework.QueuedPodInfo{
 				PodInfo: tu.MustNewPodInfo(t, st.MakePod().Name("p2").Namespace("ns").Priority(highPriority).
 					Label(v1alpha1.PodGroupLabel, "pg1").Obj()),
-				InitialAttemptTimestamp: ptrTime(now.Add(time.Second * 2)),
+				Timestamp: now.Add(time.Second * 2),
 			},
 			pgs: []*v1alpha1.PodGroup{
 				tu.MakePodGroup().Name("pg1").Namespace("ns").Time(now.Add(time.Second * 1)).Obj(),
@@ -373,12 +373,12 @@ func TestLess(t *testing.T) {
 			p1: &framework.QueuedPodInfo{
 				PodInfo: tu.MustNewPodInfo(t, st.MakePod().Name("p1").Namespace("ns1").Priority(highPriority).
 					Label(v1alpha1.PodGroupLabel, "pg2").Obj()),
-				InitialAttemptTimestamp: ptrTime(now.Add(time.Second * 1)),
+				Timestamp: now.Add(time.Second * 1),
 			},
 			p2: &framework.QueuedPodInfo{
 				PodInfo: tu.MustNewPodInfo(t, st.MakePod().Name("p2").Namespace("ns2").Priority(highPriority).
 					Label(v1alpha1.PodGroupLabel, "pg2").Obj()),
-				InitialAttemptTimestamp: ptrTime(now.Add(time.Second * 1)),
+				Timestamp: now.Add(time.Second * 1),
 			},
 			pgs: []*v1alpha1.PodGroup{
 				tu.MakePodGroup().Name("pg1").Namespace("ns1").Time(now.Add(time.Second * 1)).Obj(),
@@ -389,18 +389,51 @@ func TestLess(t *testing.T) {
 		{
 			name: "equal priority and creation time, and p2 belong to pg2",
 			p1: &framework.QueuedPodInfo{
-				PodInfo:                 tu.MustNewPodInfo(t, st.MakePod().Name("p1").Namespace("ns1").Priority(highPriority).Obj()),
-				InitialAttemptTimestamp: ptrTime(now.Add(time.Second * 1)),
+				PodInfo:   tu.MustNewPodInfo(t, st.MakePod().Name("p1").Namespace("ns1").Priority(highPriority).Obj()),
+				Timestamp: now.Add(time.Second * 1),
 			},
 			p2: &framework.QueuedPodInfo{
 				PodInfo: tu.MustNewPodInfo(t, st.MakePod().Name("p2").Namespace("ns2").Priority(highPriority).
 					Label(v1alpha1.PodGroupLabel, "pg2").Obj()),
-				InitialAttemptTimestamp: ptrTime(now.Add(time.Second * 1)),
+				Timestamp: now.Add(time.Second * 1),
 			},
 			pgs: []*v1alpha1.PodGroup{
 				tu.MakePodGroup().Name("pg2").Namespace("ns2").Time(now.Add(time.Second * 2)).Obj(),
 			},
 			want: true,
+		},
+		{
+			// Regression test for #110.
+			name: "equal priority, no PodGroup: p1 has an earlier initial attempt timestamp but is re-enqueued after p2",
+			p1: &framework.QueuedPodInfo{
+				PodInfo:                 tu.MustNewPodInfo(t, st.MakePod().Name("p1").Namespace("ns1").Priority(highPriority).Obj()),
+				Timestamp:               now.Add(time.Second * 2),
+				InitialAttemptTimestamp: ptrTime(now.Add(time.Second * 1)),
+			},
+			p2: &framework.QueuedPodInfo{
+				PodInfo:                 tu.MustNewPodInfo(t, st.MakePod().Name("p2").Namespace("ns2").Priority(highPriority).Obj()),
+				Timestamp:               now.Add(time.Second * 1),
+				InitialAttemptTimestamp: ptrTime(now.Add(time.Second * 2)),
+			},
+			want: false,
+		},
+		{
+			name: "equal priority, p1 doesn't belong to a PodGroup and p2 belongs to pg2: p2 is sorted by its PodGroup creation timestamp rather than its enqueue timestamp",
+			p1: &framework.QueuedPodInfo{
+				PodInfo:                 tu.MustNewPodInfo(t, st.MakePod().Name("p1").Namespace("ns1").Priority(highPriority).Obj()),
+				Timestamp:               now.Add(time.Second * 3),
+				InitialAttemptTimestamp: ptrTime(now.Add(time.Second * 3)),
+			},
+			p2: &framework.QueuedPodInfo{
+				PodInfo: tu.MustNewPodInfo(t, st.MakePod().Name("p2").Namespace("ns2").Priority(highPriority).
+					Label(v1alpha1.PodGroupLabel, "pg2").Obj()),
+				Timestamp:               now.Add(time.Second * 4),
+				InitialAttemptTimestamp: ptrTime(now.Add(time.Second * 4)),
+			},
+			pgs: []*v1alpha1.PodGroup{
+				tu.MakePodGroup().Name("pg2").Namespace("ns2").Time(now.Add(time.Second * 2)).Obj(),
+			},
+			want: false,
 		},
 	}
 
