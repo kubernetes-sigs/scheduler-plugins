@@ -9,7 +9,7 @@ strategy to preempt Pods across multiple nodes, which is useful when a Pod canno
 scheduled due to "cross node" constraints such as PodTopologySpread and PodAntiAffinity.
 This was also mentioned in the original design document of [Preemption].
 
-[Preemption]: https://github.com/kubernetes/community/blob/master/contributors/design-proposals/scheduling/pod-preemption.md#supporting-cross-node-preemption
+[Preemption]: https://github.com/kubernetes/design-proposals-archive/blob/main/scheduling/pod-preemption.md#supporting-cross-node-preemption
 
 This plugin is built as a sample to demonstrate how to use PostFilter extension point,
 as well as inspiring users to built their own innovative strategies, such as preepmpting
