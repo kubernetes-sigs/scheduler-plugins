@@ -76,7 +76,7 @@ spec:
             namespace: default
           minBandwidth: "100Mi"
           maxNetworkCost: 80
-        - workload: redis-cart
+        - workload:
             kind: Deployment
             name: redis-cart-deployment
             selector: redis-cart
