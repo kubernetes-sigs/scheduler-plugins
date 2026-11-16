@@ -707,7 +707,21 @@ func (c *CapacityScheduling) updateElasticQuota(oldObj, newObj interface{}) {
 }
 
 func (c *CapacityScheduling) deleteElasticQuota(obj interface{}) {
-	elasticQuota := obj.(*v1alpha1.ElasticQuota)
+	var elasticQuota *v1alpha1.ElasticQuota
+	switch t := obj.(type) {
+	case *v1alpha1.ElasticQuota:
+		elasticQuota = t
+	case cache.DeletedFinalStateUnknown:
+		var ok bool
+		elasticQuota, ok = t.Obj.(*v1alpha1.ElasticQuota)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("cannot convert to *v1alpha1.ElasticQuota: %v", t.Obj))
+			return
+		}
+	default:
+		utilruntime.HandleError(fmt.Errorf("cannot convert to *v1alpha1.ElasticQuota: %v", obj))
+		return
+	}
 	c.Lock()
 	defer c.Unlock()
 	delete(c.elasticQuotaInfos, elasticQuota.Namespace)
@@ -778,7 +792,21 @@ func (c *CapacityScheduling) updatePod(oldObj, newObj interface{}) {
 func (c *CapacityScheduling) deletePod(obj interface{}) {
 	logger := klog.FromContext(context.TODO())
 
-	pod := obj.(*v1.Pod)
+	var pod *v1.Pod
+	switch t := obj.(type) {
+	case *v1.Pod:
+		pod = t
+	case cache.DeletedFinalStateUnknown:
+		var ok bool
+		pod, ok = t.Obj.(*v1.Pod)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("cannot convert to *v1.Pod: %v", t.Obj))
+			return
+		}
+	default:
+		utilruntime.HandleError(fmt.Errorf("cannot convert to *v1.Pod: %v", obj))
+		return
+	}
 	c.Lock()
 	defer c.Unlock()
 
