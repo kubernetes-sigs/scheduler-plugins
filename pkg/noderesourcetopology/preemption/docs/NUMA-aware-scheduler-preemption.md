@@ -295,34 +295,83 @@ the unmodified NRT but rather returns with `Unschedulable` status immediately.
   updater publishes fresh NRT (with updated placement encoding), and the  
    scheduler cache reconciles on the next NRT watch event.
 
-## Prerequisites and limitations
-
-**Prerequisites:**
+## Prerequisites
 
 1. Nodes must run Topology Manager with policy `single-numa-node` (pod or
-  container scope).
+  container scope). The NRT-preemption is a no-op for other policies.
 2. A compatible topology updater must publish NRT objects with valid
-  `numaplacement` metadata and per-zone vector attributes.
-3. The scheduler profile must enable the NUMA-aware plugin on both
-  `PreFilter` and `Filter` extension points (PreFilter is required for  
-   PreFilterExtensions to be invoked).
-4. Scheduler-side NRT caching (`OverReserve` or equivalent) must decode and
-  store NUMA placement info on NRT updates. At the moment (subject to change with 
+  `numaplacement` metadata and per-zone vector attributes. On the other hand the
+  cache collection of containers requesting exclusive resources must align with
+  Kubelet's vision so that the decoding of the attributes succeeds. If the computation
+  doesn't align, decoding fails and no preemption is tried.
+3. Scheduler-side NRT caching (`OverReserve` or equivalent) must decode and
+  store NUMA placement info on NRT updates. At the moment (subject to change with
   future PRs), Passthrough and discardReserved cache modes does not provide
   placement data.
+4. The scheduler profile must enable the NUMA-aware plugin on both
+  `PreFilter` and `Filter` extension points (PreFilter is required for
+   PreFilterExtensions to be invoked).
+5. Pods that are eligible for NRT Filter are also elegible for preemption under
+the conditions described above: pods without exclusive resources will be skipped by NRT
+preemption too.
 
 **Limitations:**
 
+**1. Concurrent pods from the same NRT scheduler (reserve overallocation)**
 
-| Condition                                          | Behavior                                                          |
-| -------------------------------------------------- | ----------------------------------------------------------------- |
-| Missing or empty NUMA placement info               | Filter uses unmodified NRT; no eviction                           |
-| Inconsistent container count in placement metadata | Placement decoding fails; same as above                           |
-| Non-`single-numa-node` policy                      | NUMA filter handler is nil; plugin is a no-op for other topology  |
-| Best-effort pods without device resources          | Skipped by both filter and preemption simulation                  |
-| Burstable pods                                     | Only non-native (device) resources are considered exclusive       |
-| Foreign pod lands during preemption dry-run before detection | Optimistic post-eviction Filter may succeed; victims can be deleted while the preemptor later stays Pending (`!Fresh` or failed alignment). See [Concurrent updates during preemption dry-run](#concurrent-updates-during-preemption-dry-run). |
+While DefaultPreemption is evaluating victim eviction, other pods may be reserved by NRT
+scheduler and pessimistic overallocation is done across all NUMA zones on the NRT cache.
+The dry-run therefore sees a stricter topology than the last published NRT, then adds back
+only the victims’ resources on that already-pessimistic view. so overallocation protects
+against optimistic stale NRT and it does not make capacity look freer.
 
+**2. Foreign pods (pre-detection race)**
+
+While dry-run runs, a foreign pod can land on the node before this scheduler marks the
+node dirty. Until NodeHasForeignPods fires, Filter may still see Fresh=true and an NRT
+that does not reflect that foreign consumption. What (may at worst*) happen next is
+optimistic post-eviction Filter success → PostFilter deletes victims → nominate → later
+scheduling cycle. On the next cycle, Filter either fails freshness (!Fresh) or fails
+alignment on updated/reconciled data, so the preemptor stays Pending while victims are
+already gone which is false eviction.
+
+The same class of distributed/stale-NRT uncertainty already exists on the normal Filter
+path. However, the window of such a race is smaller in practice in preemption context
+because preemption is uncommon and foreign-pod detection quickly forces !Fresh on later
+Filter calls.
+
+3. **Placement staleness.**
+
+NUMA placement is decoded from the last NRT update.
+If a pod was recently scheduled but NRT has not yet been reconciled, placement
+data may not include it. This is the same class of staleness problem addressed
+by the reserve cache; preemption benefits from timely NRT updates, which one
+of the driving is synchronizing podfingerprint (PFP).
+
+4. **Cache different from overreserve.**
+
+NUMA placement is decoded only using the Overreserve cache. To support preemption
+in other cache implementations, need to implement
+`GetCachedNUMAPlacementInfo(nodeName string) *numaplacement.EncodedInfo` to return
+data for processing the dry-run.
+
+5. **Stale NRT data due to same-profile terminated pods and false eviction**
+
+When foreign pod detection is enabled, creation or deletion of foreign pods will mark
+the node `!Fresh` and scheduling on that node will be blocked until the node is fresh
+again, and preemption will behave the same. When the terminated pod is not foreign,
+meaning that it was handled by the same scheduler profile, there is no special event
+to trigger NRT cache resync by default. This leads to reflecting exclusive resources
+as reserved while in reality they are not. As a result new coming pod may falsely fail
+the NRT Filter and trigger preemption, and if victims are found, they will be evicted
+unnecessarily.
+To solve this issue on Overreserve cache, we introduced a new cache configuration option
+called `terminatedOwnPodsDetect` that is disabled by default
+(see https://github.com/kubernetes-sigs/scheduler-plugins/pull/1018). When the flag is
+enabled with `OnlyExclusiveResources`, a new pod informer starts and reacts to same-profile
+pod deletions by restoring exclusive resources to the overreserved cache, or marking the
+node with a signal that tells Filter to skip PostFilter on misalignment Filter failure until
+the node cache is resynced.
 
 ## Performance and reliability considerations
 
@@ -344,54 +393,11 @@ pod-set can never be returned. The pod snapshot used for decoding is frozen at f
 time (aligned with podfingerprint reconciliation) and is not rebuilt from the lister  
 at decode time.
 
-### Concurrent updates to NRT during preemption dry-run
-
-NRT (or the scheduler-side view of it) can change while DefaultPreemption is still  
-evaluating victim eviction. Past the freshness check in Filter (`info.Fresh`;  
-otherwise Filter returns Unschedulable), two flows matter. The analysis assumes the  
-`OverReserve` cache; passthrough mode has no assumed-resource overlay:
-
-**1. Concurrent pods from the same NRT scheduler (reserve overallocation)**
-
-While DefaultPreemption is evaluating victim eviction, other pods may be reserved by NRT 
-scheduler. that does not wait for a fresh NRT CR. and pessimistic overallocation is done 
-across all NUMA zones on the NRT cache. The dry-run therefore sees a stricter topology 
-than the last published NRT, then adds back only the victims’ resources on that already-
-pessimistic view. so overallocation protects against optimistic stale NRT and it does not
-make capacity look freer.
-
-**2. Foreign pods (pre-detection race)**
-
-While dry-run runs, a foreign pod can land on the node before this scheduler marks the 
-node dirty. Until NodeHasForeignPods fires, Filter may still see Fresh=true and an NRT 
-that does not reflect that foreign consumption. What (may at worst*) happen next is
-optimistic post-eviction Filter success → PostFilter deletes victims → nominate → later
-scheduling cycle. On the next cycle, Filter either fails freshness (!Fresh) or fails 
-alignment on updated/reconciled data, so the preemptor stays Pending while victims are
-already gone which is false eviction.
-
-The same class of distributed/stale-NRT uncertainty already exists on the normal Filter
-path.However, the window of such a race is smaller in practice in preemption context 
-because preemption is uncommon and foreign-pod detection quickly forces !Fresh on later
-Filter calls.
-
-## Future enhancements and open issues
+## Future modifications
 
 1. **Score plugin awareness.** The current implementation adjusts NRT only in
-  the filter stage. If preemption dry-run ever invokes the score plugin with  
-   victim simulation, similar post-eviction adjustment may be needed there.
-2. **Placement staleness.** NUMA placement is decoded from the last NRT update.
-  If a pod was recently scheduled but NRT has not yet been reconciled, placement  
-   data may not include it. This is the same class of staleness problem addressed  
-   by the reserve cache; preemption benefits from timely NRT updates, which one    
-  of the driving is synchronizing podfingerprint (PFP). 
-3. **Multi-NUMA policies.** NRT scheduler plugin is designed to support only   
-`single-numa-node`, hence supporting other possible Topology Manager policies 
-  would require a different post-eviction simulation model.
-4. **Cache different from overreserve.** NUMA placement is decoded only using the
-Overreserve cache. To support preemption in other cache implementations, need to
-implement `GetCachedNUMAPlacementInfo(nodeName string) *numaplacement.EncodedInfo`
-to return data for processing the dry-run.
+  the filter plugin. If preemption dry-run ever invokes the score plugin with
+  victim simulation, similar post-eviction adjustment may be needed there.
 
 ## Version history
 
@@ -399,3 +405,5 @@ Major milestones only
 
 - 20260630 initial document: preemption status, container NUMA localities,  
 PreFilter integration, and post-eviction NRT simulation
+- 20261117 document the same-profile terminated pod issue and announce the new
+config option for Overreserve cache.

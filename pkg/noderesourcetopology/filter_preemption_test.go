@@ -18,6 +18,7 @@ package noderesourcetopology
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
@@ -34,16 +35,21 @@ import (
 )
 
 type fakeFilterCache struct {
-	nrt               *topologyv1alpha2.NodeResourceTopology
-	numaPlacement     *numaplacement.EncodedInfo
-	maybeOverReserved []string
+	nrt                *topologyv1alpha2.NodeResourceTopology
+	numaPlacement      *numaplacement.EncodedInfo
+	withTerminatedPods bool
+	maybeOverReserved  []string
 }
 
 func (f *fakeFilterCache) GetCachedNRTCopy(_ context.Context, _ string, _ *v1.Pod) (*topologyv1alpha2.NodeResourceTopology, nrtcache.CachedNRTInfo) {
 	if f.nrt == nil {
 		return nil, nrtcache.CachedNRTInfo{Fresh: true}
 	}
-	return f.nrt.DeepCopy(), nrtcache.CachedNRTInfo{Fresh: true, Generation: 1}
+	return f.nrt.DeepCopy(), nrtcache.CachedNRTInfo{
+		Fresh:              true,
+		Generation:         1,
+		WithTerminatedPods: f.withTerminatedPods,
+	}
 }
 
 func (f *fakeFilterCache) GetCachedNUMAPlacementInfo(_ string) *numaplacement.EncodedInfo {
@@ -278,7 +284,7 @@ func TestFilter_PreemptionFlow(t *testing.T) {
 		}
 	})
 
-	t.Run("preemption with eviction simulation failure results in unschedulable", func(t *testing.T) {
+	t.Run("preemption with eviction simulation failure results in unschedulableAndUnresolvable", func(t *testing.T) {
 		cache := &fakeFilterCache{nrt: nrt, numaPlacement: numaPlacement}
 		tm := TopologyMatch{nrtCache: cache, preemptionMode: apiconfig.PreemptionEnabled}
 		// add a second victim that is not in numa placement info
@@ -287,8 +293,8 @@ func TestFilter_PreemptionFlow(t *testing.T) {
 
 		tooLarge := makeGuaranteedPod("default", "preemptor", containerName, 4, "1Gi")
 		status := tm.Filter(context.Background(), cycleState, tooLarge, nodeInfo)
-		if !quasiEqualStatus(status, fwk.NewStatus(fwk.Unschedulable, "eviction simulation in NRT is not possible: missing NUMA mapping")) {
-			t.Fatalf("expected unschedulable preemptor, got %v", status)
+		if !quasiEqualStatus(status, fwk.NewStatus(fwk.UnschedulableAndUnresolvable, "eviction simulation in NRT is not possible: missing NUMA mapping")) {
+			t.Fatalf("expected unschedulableAndUnresolvable preemptor, got %v", status)
 		}
 		if len(cache.maybeOverReserved) == 0 || cache.maybeOverReserved[0] != nodeName {
 			t.Fatalf("preemption flow must mark node over-reserved on failure, got %v", cache.maybeOverReserved)
@@ -328,8 +334,8 @@ func TestFilter_PreemptionFlow(t *testing.T) {
 		cycleState := cycleStateWithVictims(t, nonExclusive0, nonExclusive1, exclusiveVictim)
 
 		status := tm.Filter(context.Background(), cycleState, preemptor, nodeInfo)
-		if !quasiEqualStatus(status, fwk.NewStatus(fwk.Unschedulable, "eviction simulation in NRT is not possible: missing NUMA mapping")) {
-			t.Fatalf("expected unschedulable preemptor, got %v", status)
+		if !quasiEqualStatus(status, fwk.NewStatus(fwk.UnschedulableAndUnresolvable, "eviction simulation in NRT is not possible: missing NUMA mapping")) {
+			t.Fatalf("expected unschedulableAndUnresolvable preemptor, got %v", status)
 		}
 		if len(cache.maybeOverReserved) != 1 || cache.maybeOverReserved[0] != nodeName {
 			t.Fatalf("preemption flow must mark node over-reserved on eviction simulation failure, got %v", cache.maybeOverReserved)
@@ -366,4 +372,57 @@ func TestGetVictimPods(t *testing.T) {
 	if got[0].Name != victim.Name || got[0].Namespace != victim.Namespace {
 		t.Fatalf("unexpected victim: %+v", got[0])
 	}
+}
+
+func TestFilter_WithTerminatedPods(t *testing.T) {
+	const nodeName = "node-terminated"
+
+	nrt := makePreemptionNRT(nodeName)
+	node := makeNodeFromNRT(nrt)
+	nodeInfo := framework.NewNodeInfo()
+	nodeInfo.SetNode(node)
+
+	// node-0 has 0 CPU available; 4 CPU Guaranteed pod cannot align.
+	unfit := makeGuaranteedPod("default", "unfit", containerName, 4, "1Gi")
+	// 2 CPU fits on node-1.
+	fit := makeGuaranteedPod("default", "fit", containerName, 2, "1Gi")
+
+	t.Run("reject remaps to UnschedulableAndUnresolvable", func(t *testing.T) {
+		cache := &fakeFilterCache{nrt: nrt, withTerminatedPods: true}
+		tm := TopologyMatch{nrtCache: cache, preemptionMode: apiconfig.PreemptionDisabled}
+
+		status := tm.Filter(context.Background(), framework.NewCycleState(), unfit, nodeInfo)
+		if status == nil || status.Code() != fwk.UnschedulableAndUnresolvable {
+			t.Fatalf("expected UnschedulableAndUnresolvable, got %v", status)
+		}
+		if !strings.Contains(status.Message(), "terminated same-profile pods") {
+			t.Fatalf("expected terminated-pods reason, got %q", status.Message())
+		}
+		if len(cache.maybeOverReserved) != 1 || cache.maybeOverReserved[0] != nodeName {
+			t.Fatalf("expected over-reserved mark after reject, got %v", cache.maybeOverReserved)
+		}
+	})
+
+	t.Run("fit still succeeds while WithTerminatedPods", func(t *testing.T) {
+		cache := &fakeFilterCache{nrt: nrt, withTerminatedPods: true}
+		tm := TopologyMatch{nrtCache: cache, preemptionMode: apiconfig.PreemptionDisabled}
+
+		status := tm.Filter(context.Background(), framework.NewCycleState(), fit, nodeInfo)
+		if !quasiEqualStatus(status, nil) {
+			t.Fatalf("expected success when pod fits, got %v", status)
+		}
+		if len(cache.maybeOverReserved) != 0 {
+			t.Fatalf("success must not mark over-reserved, got %v", cache.maybeOverReserved)
+		}
+	})
+
+	t.Run("reject without mark stays Unschedulable", func(t *testing.T) {
+		cache := &fakeFilterCache{nrt: nrt, withTerminatedPods: false}
+		tm := TopologyMatch{nrtCache: cache, preemptionMode: apiconfig.PreemptionDisabled}
+
+		status := tm.Filter(context.Background(), framework.NewCycleState(), unfit, nodeInfo)
+		if !quasiEqualStatus(status, fwk.NewStatus(fwk.Unschedulable, "cannot align container")) {
+			t.Fatalf("expected Unschedulable without terminated mark, got %v", status)
+		}
+	})
 }

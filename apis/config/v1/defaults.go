@@ -91,6 +91,8 @@ var (
 
 	defaultForeignPodsDetect = ForeignPodsDetectAll
 
+	defaultTerminatedOwnPodsDetect = TerminatedOwnPodsDetectNone
+
 	defaultResyncMethod = CacheResyncAutodetect
 
 	defaultInformerMode = CacheInformerDedicated
@@ -212,7 +214,9 @@ func SetDefaults_NodeResourceTopologyMatchArgs(obj *NodeResourceTopologyMatchArg
 	}
 	if obj.Cache.ForeignPodsDetect == nil {
 		obj.Cache.ForeignPodsDetect = &defaultForeignPodsDetect
-
+	}
+	if obj.Cache.TerminatedOwnPodsDetect == nil {
+		obj.Cache.TerminatedOwnPodsDetect = &defaultTerminatedOwnPodsDetect
 	}
 	if obj.Cache.ResyncMethod == nil {
 		obj.Cache.ResyncMethod = &defaultResyncMethod

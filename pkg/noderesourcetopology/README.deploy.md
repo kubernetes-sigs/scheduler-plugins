@@ -25,7 +25,7 @@ the setup would be complex and likely fragile, so this option is never fully exp
 When both the main scheduler and the secondary scheduler bind pods to nodes, the latter needs to deal with the fact
 that pods can be scheduled outside its own control; thus, the expected computed state need to be robust against
 this form of interference. The logic to deal with this interference is implemented in the
-[foreign pods][1] [management](https://github.com/kubernetes-sigs/scheduler-plugins/blob/master/pkg/noderesourcetopology/cache/foreign_pods.go).
+[foreign pods][1] [management](https://github.com/kubernetes-sigs/scheduler-plugins/blob/master/pkg/noderesourcetopology/cache/pod_handlers.go).
 
 While NRT runs as secondary scheduler, this form of interference is practically unavoidable.
 The effect of the interference would be slower scheduling cycle, because the NRT plugin will need to compute the
@@ -33,10 +33,17 @@ expected node state more often and to possibly invalidate partial computations, 
 which will take more time.
 
 In order to minimize the recomputation without compromising accuracy, we introduced a cache tuning option
-[ForeignPodsDetect](https://github.com/kubernetes-sigs/scheduler-plugins/blob/master/apis/config/v1/types.go#L179).
+[ForeignPodsDetect](https://github.com/kubernetes-sigs/scheduler-plugins/blob/master/apis/config/v1/types.go).
 Currently, the foreign pods detection algorithm is triggered by default when any foreign pod is detected.
 Testing is in progress to move the default to trigger when pods which require exclusive resources are
 requested, because only these exclusive resources can have NUMA locality, then contribute to the accounting done by the plugin.
+
+A related cache tuning option is
+[TerminatedOwnPodsDetect](https://github.com/kubernetes-sigs/scheduler-plugins/blob/master/apis/config/v1/types.go).
+When same-profile pods that request exclusive resources terminate, NRT Available may still reflect them until
+resync. Detection defaults to `None` (same rationale as PreemptionMode defaulting to Disabled). Set
+`OnlyExclusiveResources` when preemption is enabled to restore assumed overlays when possible, or mark
+the node so Filter rejects become `UnschedulableAndUnresolvable` and avoid false preemption when PreemptionMode is enabled.
 
 ### Efficient computation of the expected node states
 
