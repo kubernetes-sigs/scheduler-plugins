@@ -297,6 +297,38 @@ func TestSchedulingDefaults(t *testing.T) {
 				DefaultProfileName:      pointer.StringPtr("all-syscalls"),
 			},
 		},
+		{
+			name:   "empty config HighLoadFilterArgs",
+			config: &HighLoadFilterArgs{},
+			expect: &HighLoadFilterArgs{
+				MetricProvider: HighLoadFilterMetricProviderSpec{
+					Type: HighLoadFilterKubernetesMetricsServer,
+				},
+				UsageThresholds: HighLoadFilterUsageThresholds{
+					CPU:    pointer.Int64Ptr(DefaultHighLoadFilterCPUThreshold),
+					Memory: pointer.Int64Ptr(DefaultHighLoadFilterMemoryThreshold),
+				},
+				FailOpen:                     pointer.BoolPtr(DefaultHighLoadFilterFailOpen),
+				MetricsUpdateIntervalSeconds: pointer.Int64Ptr(DefaultHighLoadFilterMetricsUpdateIntervalSeconds),
+				NodeMetricExpirationSeconds:  pointer.Int64Ptr(DefaultHighLoadFilterNodeMetricExpirationSeconds),
+			},
+		},
+		{
+			name: "external watcher HighLoadFilterArgs",
+			config: &HighLoadFilterArgs{
+				WatcherAddress: "https://load-watcher.example.com",
+			},
+			expect: &HighLoadFilterArgs{
+				WatcherAddress: "https://load-watcher.example.com",
+				UsageThresholds: HighLoadFilterUsageThresholds{
+					CPU:    pointer.Int64Ptr(DefaultHighLoadFilterCPUThreshold),
+					Memory: pointer.Int64Ptr(DefaultHighLoadFilterMemoryThreshold),
+				},
+				FailOpen:                     pointer.BoolPtr(DefaultHighLoadFilterFailOpen),
+				MetricsUpdateIntervalSeconds: pointer.Int64Ptr(DefaultHighLoadFilterMetricsUpdateIntervalSeconds),
+				NodeMetricExpirationSeconds:  pointer.Int64Ptr(DefaultHighLoadFilterNodeMetricExpirationSeconds),
+			},
+		},
 	}
 
 	for _, tc := range tests {

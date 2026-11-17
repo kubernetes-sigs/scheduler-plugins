@@ -84,6 +84,15 @@ var (
 	// DefaultInsecureSkipVerify is whether to skip the certificate verification
 	DefaultInsecureSkipVerify = true
 
+	// Defaults for HighLoadFilter. Thresholds default to 100 so enabling the
+	// plugin without explicit limits only rejects predicted overload.
+	DefaultHighLoadFilterCPUThreshold                 int64 = 100
+	DefaultHighLoadFilterMemoryThreshold              int64 = 100
+	DefaultHighLoadFilterFailOpen                           = true
+	DefaultHighLoadFilterMetricsUpdateIntervalSeconds int64 = 30
+	DefaultHighLoadFilterNodeMetricExpirationSeconds  int64 = 180
+	defaultHighLoadFilterInsecureSkipVerify                 = false
+
 	defaultResourceSpec = []schedulerconfigv1.ResourceSpec{
 		{Name: string(v1.ResourceCPU), Weight: 1},
 		{Name: string(v1.ResourceMemory), Weight: 1},
@@ -268,5 +277,32 @@ func SetDefaults_SySchedArgs(obj *SySchedArgs) {
 func SetDefaults_NodeMetadataArgs(obj *NodeMetadataArgs) {
 	if obj.TimestampFormat == nil && obj.MetadataType != nil && *obj.MetadataType == MetadataTypeTimestamp {
 		obj.TimestampFormat = ptr.To(time.RFC3339)
+
+	}
+}
+
+// SetDefaults_HighLoadFilterArgs sets the default parameters for the
+// HighLoadFilter plugin.
+func SetDefaults_HighLoadFilterArgs(args *HighLoadFilterArgs) {
+	if args.WatcherAddress == "" && args.MetricProvider.Type == "" {
+		args.MetricProvider.Type = HighLoadFilterKubernetesMetricsServer
+	}
+	if args.WatcherAddress == "" && args.MetricProvider.Type == HighLoadFilterPrometheus && args.MetricProvider.InsecureSkipVerify == nil {
+		args.MetricProvider.InsecureSkipVerify = &defaultHighLoadFilterInsecureSkipVerify
+	}
+	if args.UsageThresholds.CPU == nil {
+		args.UsageThresholds.CPU = &DefaultHighLoadFilterCPUThreshold
+	}
+	if args.UsageThresholds.Memory == nil {
+		args.UsageThresholds.Memory = &DefaultHighLoadFilterMemoryThreshold
+	}
+	if args.FailOpen == nil {
+		args.FailOpen = &DefaultHighLoadFilterFailOpen
+	}
+	if args.MetricsUpdateIntervalSeconds == nil {
+		args.MetricsUpdateIntervalSeconds = &DefaultHighLoadFilterMetricsUpdateIntervalSeconds
+	}
+	if args.NodeMetricExpirationSeconds == nil {
+		args.NodeMetricExpirationSeconds = &DefaultHighLoadFilterNodeMetricExpirationSeconds
 	}
 }
