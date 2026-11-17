@@ -1628,3 +1628,97 @@ func makePodAllocated(selector string, podName string, hostname string, priority
 		},
 	}
 }
+
+// TestPreFilterNilGuards verifies that PreFilter returns Success (not a panic) when either
+// the AppGroup or NetworkTopology CR is absent from the fake store.
+func TestPreFilterNilGuards(t *testing.T) {
+	basicAppGroup := GetAppGroupCRBasic()
+	networkTopology := GetNetworkTopologyCRBasic()
+
+	nodes := []*v1.Node{
+		st.MakeNode().Name("n-1").Label(v1.LabelTopologyRegion, "us-west-1").Label(v1.LabelTopologyZone, "Z1").Capacity(
+			map[v1.ResourceName]string{v1.ResourceCPU: "8000m", v1.ResourceMemory: "16Gi"}).Obj(),
+	}
+
+	pod := makePod("p1", "p1-deployment", 0, "basic", nil, nil)
+
+	tests := []struct {
+		name          string
+		storeAppGroup bool
+		storeNT       bool
+		expectedCode  fwk.Code
+	}{
+		{
+			name:          "AppGroup CR missing → Success (scoreEqually)",
+			storeAppGroup: false,
+			storeNT:       true,
+			expectedCode:  fwk.Success,
+		},
+		{
+			name:          "NetworkTopology CR missing → Success (scoreEqually)",
+			storeAppGroup: true,
+			storeNT:       false,
+			expectedCode:  fwk.Success,
+		},
+		{
+			name:          "Both CRs present → Success",
+			storeAppGroup: true,
+			storeNT:       true,
+			expectedCode:  fwk.Success,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := clientgoscheme.Scheme
+			utilruntime.Must(agv1alpha1.AddToScheme(s))
+			utilruntime.Must(ntv1alpha1.AddToScheme(s))
+
+			ctx := context.Background()
+			cs := testClientSet.NewSimpleClientset()
+
+			builder := fake.NewClientBuilder().
+				WithScheme(s).
+				WithStatusSubresource(&agv1alpha1.AppGroup{}).
+				WithStatusSubresource(&ntv1alpha1.NetworkTopology{})
+			if tt.storeAppGroup {
+				builder = builder.WithObjects(basicAppGroup)
+			}
+			if tt.storeNT {
+				builder = builder.WithObjects(networkTopology)
+			}
+			client := builder.Build()
+
+			informerFactory := informers.NewSharedInformerFactory(cs, 0)
+			snapshot := newTestSharedLister(nil, nodes)
+
+			podInformer := informerFactory.Core().V1().Pods()
+			podLister := podInformer.Lister()
+			informerFactory.Start(ctx.Done())
+
+			registeredPlugins := []tf.RegisterPluginFunc{
+				tf.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+				tf.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+			}
+			fh, _ := tf.NewFramework(ctx, registeredPlugins, "default-scheduler",
+				schedruntime.WithClientSet(cs),
+				schedruntime.WithInformerFactory(informerFactory),
+				schedruntime.WithSnapshotSharedLister(snapshot))
+
+			pl := &NetworkOverhead{
+				Client:      client,
+				podLister:   podLister,
+				handle:      fh,
+				namespaces:  []string{"default"},
+				weightsName: "UserDefined",
+				ntName:      "nt-test",
+			}
+
+			state := framework.NewCycleState()
+			_, got := pl.PreFilter(ctx, state, pod, nil)
+			if got.Code() != tt.expectedCode {
+				t.Errorf("expected code %v, got %v: %v", tt.expectedCode, got.Code(), got.Message())
+			}
+		})
+	}
+}
