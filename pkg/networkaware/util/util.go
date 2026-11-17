@@ -23,6 +23,12 @@ import (
 	ntv1alpha1 "github.com/diktyo-io/networktopology-api/pkg/apis/networktopology/v1alpha1"
 )
 
+// StatisticsKey : key for map concerning statistics (origin / typeStatistics inter or intra)
+type StatisticsKey struct {
+	Origin         string
+	TypeStatistics string
+}
+
 // CostKey : key for map concerning network costs (origin / destinations)
 type CostKey struct {
 	Origin      string
@@ -62,6 +68,15 @@ func GetNodeZone(node *v1.Node) string {
 		return ""
 	}
 	return labels[v1.LabelTopologyZone]
+}
+
+// GetNodeSegment : return the segment of the node
+func GetNodeSegment(node *v1.Node) string {
+	labels := node.Labels
+	if labels == nil {
+		return ""
+	}
+	return labels[string(ntv1alpha1.NetworkTopologySegment)]
 }
 
 // GetPodAppGroupLabel : get AppGroup from pod annotations
@@ -134,6 +149,25 @@ func (s ByWorkloadSelector) Less(i, j int) bool {
 	return s[i].Workload.Selector < s[j].Workload.Selector
 }
 
+// FindWorkloadStatistics : return the workload statistics of the given pod
+func FindWorkloadStatistics(t agv1alpha1.AppGroupTopologyList, selector string) agv1alpha1.AppGroupStatistics {
+	low := 0
+	high := len(t) - 1
+
+	for low <= high {
+		mid := (low + high) / 2
+		if t[mid].Workload.Selector == selector {
+			return t[mid].WorkloadStatistics // Return the Workload Statistics
+		} else if t[mid].Workload.Selector < selector {
+			low = mid + 1
+		} else if t[mid].Workload.Selector > selector {
+			high = mid - 1
+		}
+	}
+	// Workload statistics were not found
+	return agv1alpha1.AppGroupStatistics{}
+}
+
 // FindPodOrder : return the order index of the given pod
 func FindPodOrder(t agv1alpha1.AppGroupTopologyList, selector string) int32 {
 	low := 0
@@ -150,6 +184,44 @@ func FindPodOrder(t agv1alpha1.AppGroupTopologyList, selector string) int32 {
 		}
 	}
 	return -1
+}
+
+// FindOriginInterStatistics : return the statistics for a certain origin
+func FindOriginInterStatistics(originList []ntv1alpha1.OriginInfo, origin string) ntv1alpha1.NetworkTopologyStatistics {
+	low := 0
+	high := len(originList) - 1
+
+	for low <= high {
+		mid := (low + high) / 2
+		if originList[mid].Origin == origin {
+			return originList[mid].OriginInterStatistics // Return InterStatistics
+		} else if originList[mid].Origin < origin {
+			low = mid + 1
+		} else if originList[mid].Origin > origin {
+			high = mid - 1
+		}
+	}
+	// Statistics were not found
+	return ntv1alpha1.NetworkTopologyStatistics{}
+}
+
+// FindOriginIntraStatistics : return the statistics for a certain origin
+func FindOriginIntraStatistics(originList []ntv1alpha1.OriginInfo, origin string) ntv1alpha1.NetworkTopologyStatistics {
+	low := 0
+	high := len(originList) - 1
+
+	for low <= high {
+		mid := (low + high) / 2
+		if originList[mid].Origin == origin {
+			return originList[mid].OriginIntraStatistics // Return IntraStatistics
+		} else if originList[mid].Origin < origin {
+			low = mid + 1
+		} else if originList[mid].Origin > origin {
+			high = mid - 1
+		}
+	}
+	// Statistics were not found
+	return ntv1alpha1.NetworkTopologyStatistics{}
 }
 
 // FindOriginCosts : return the costList for a certain origin

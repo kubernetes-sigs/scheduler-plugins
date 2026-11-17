@@ -62,3 +62,29 @@ profiles:
       namespaces:
       - "default"
 ```
+
+## Performance
+
+Benchmarks run with `go test -bench='^BenchmarkTopologicalSort_' -benchmem -benchtime=2s` (`bench_test.go`) on an
+Apple M5 Pro (`GOMAXPROCS=15`), with a controller-runtime fake client. Pod-queue sizes tested: 10, 100, 500, 1,000.
+
+AppGroup: onlineboutique (11 workloads). Each benchmark iteration runs N parallel `Less()` comparisons using
+`workqueue.ParallelizeUntil` (parallelism=16).
+
+### Less (QueueSort)
+
+`Less()` performs two binary searches through the AppGroup's topology order list (size 11), one per pod info.
+Single-call complexity: **O(log k)**, where k is the number of workloads.
+
+The benchmark measures **N parallel `Less()` calls** (total work scales with N).
+
+| Pods (queue depth) | ns/op | B/op | allocs/op |
+|---:|---:|---:|---:|
+| 10 | 595,761 | 376,144 | 3,154 |
+| 100 | 5,695,018 | 3,747,028 | 31,398 |
+| 500 | 28,278,671 | 18,696,465 | 156,896 |
+| 1,000 | 55,710,961 | 37,324,364 | 313,716 |
+
+Cost scales linearly with queue depth, about 56 µs per `Less()` call. Each call also fetches the AppGroup through
+the client; in the benchmark, the fake client deep-copies the CR on every `Get`. In a running scheduler the plugin
+reads the AppGroup from the informer cache of `util.NewClientWithCachedReader`.
