@@ -110,6 +110,24 @@ func TestCalculateScore(t *testing.T) {
 			expectError: true,
 		},
 		{
+			name:       "missing numeric metadata uses default value with highest strategy",
+			args:       &config.NodeMetadataArgs{MetadataKey: "priority", MetadataSource: config.MetadataSourceLabel, MetadataType: config.MetadataTypeNumber, ScoringStrategy: config.ScoringStrategyHighest, DefaultValue: "100"},
+			node:       &v1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node1"}},
+			checkScore: func(score int64) bool { return score == 100 },
+		},
+		{
+			name:       "missing numeric metadata uses default value with lowest strategy",
+			args:       &config.NodeMetadataArgs{MetadataKey: "cost", MetadataSource: config.MetadataSourceLabel, MetadataType: config.MetadataTypeNumber, ScoringStrategy: config.ScoringStrategyLowest, DefaultValue: "100"},
+			node:       &v1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node1"}},
+			checkScore: func(score int64) bool { return score == -100 },
+		},
+		{
+			name:       "missing timestamp metadata uses default value",
+			args:       &config.NodeMetadataArgs{MetadataKey: "last-update", MetadataSource: config.MetadataSourceAnnotation, MetadataType: config.MetadataTypeTimestamp, ScoringStrategy: config.ScoringStrategyNewest, TimestampFormat: time.RFC3339, DefaultValue: time.Now().Add(-time.Hour).Format(time.RFC3339)},
+			node:       &v1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node1"}},
+			checkScore: func(score int64) bool { return score < 0 },
+		},
+		{
 			name: "invalid numeric value",
 			args: &config.NodeMetadataArgs{
 				MetadataKey:     "priority",
@@ -193,6 +211,26 @@ func TestValidateArgs(t *testing.T) {
 				TimestampFormat: time.RFC3339,
 			},
 			expectError: false,
+		},
+		{
+			name:        "valid default value",
+			args:        &config.NodeMetadataArgs{MetadataKey: "priority", MetadataSource: config.MetadataSourceLabel, MetadataType: config.MetadataTypeNumber, ScoringStrategy: config.ScoringStrategyHighest, DefaultValue: "100"},
+			expectError: false,
+		},
+		{
+			name:        "invalid numeric default value",
+			args:        &config.NodeMetadataArgs{MetadataKey: "priority", MetadataSource: config.MetadataSourceLabel, MetadataType: config.MetadataTypeNumber, ScoringStrategy: config.ScoringStrategyHighest, DefaultValue: "not-a-number"},
+			expectError: true,
+		},
+		{
+			name:        "invalid timestamp default value",
+			args:        &config.NodeMetadataArgs{MetadataKey: "last-update", MetadataSource: config.MetadataSourceAnnotation, MetadataType: config.MetadataTypeTimestamp, ScoringStrategy: config.ScoringStrategyNewest, TimestampFormat: time.RFC3339, DefaultValue: "not-a-timestamp"},
+			expectError: true,
+		},
+		{
+			name:        "invalid timestamp format",
+			args:        &config.NodeMetadataArgs{MetadataKey: "last-update", MetadataSource: config.MetadataSourceAnnotation, MetadataType: config.MetadataTypeTimestamp, ScoringStrategy: config.ScoringStrategyNewest, TimestampFormat: "YYYY-MM-DD"},
+			expectError: true,
 		},
 		{
 			name: "missing metadata key",
@@ -424,6 +462,39 @@ func TestNormalizeScore(t *testing.T) {
 				},
 			},
 			expectedOrder: []string{"node-with-metadata", "node-no-metadata-1", "node-no-metadata-2"},
+		},
+		{
+			name: "numeric default value ranks missing metadata among labeled nodes",
+			args: &config.NodeMetadataArgs{
+				MetadataKey:     "priority",
+				MetadataSource:  config.MetadataSourceLabel,
+				MetadataType:    config.MetadataTypeNumber,
+				ScoringStrategy: config.ScoringStrategyHighest,
+				DefaultValue:    "100",
+			},
+			nodes: []*v1.Node{
+				{ObjectMeta: metav1.ObjectMeta{Name: "node-low", Labels: map[string]string{"priority": "50"}}},
+				{ObjectMeta: metav1.ObjectMeta{Name: "node-missing"}},
+				{ObjectMeta: metav1.ObjectMeta{Name: "node-high", Labels: map[string]string{"priority": "150"}}},
+			},
+			expectedOrder: []string{"node-high", "node-missing", "node-low"},
+		},
+		{
+			name: "timestamp default value ranks missing metadata among annotated nodes",
+			args: &config.NodeMetadataArgs{
+				MetadataKey:     "last-update",
+				MetadataSource:  config.MetadataSourceAnnotation,
+				MetadataType:    config.MetadataTypeTimestamp,
+				ScoringStrategy: config.ScoringStrategyNewest,
+				TimestampFormat: time.RFC3339,
+				DefaultValue:    time.Now().Add(-24 * time.Hour).Format(time.RFC3339),
+			},
+			nodes: []*v1.Node{
+				{ObjectMeta: metav1.ObjectMeta{Name: "node-old", Annotations: map[string]string{"last-update": time.Now().Add(-72 * time.Hour).Format(time.RFC3339)}}},
+				{ObjectMeta: metav1.ObjectMeta{Name: "node-missing"}},
+				{ObjectMeta: metav1.ObjectMeta{Name: "node-new", Annotations: map[string]string{"last-update": time.Now().Add(-time.Hour).Format(time.RFC3339)}}},
+			},
+			expectedOrder: []string{"node-new", "node-missing", "node-old"},
 		},
 		{
 			name: "all nodes missing metadata",

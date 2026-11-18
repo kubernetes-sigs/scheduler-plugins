@@ -181,6 +181,7 @@ type NodeMetadataArgs struct {
     MetadataType    MetadataValueType
     ScoringStrategy MetadataScoringStrategy
     TimestampFormat string
+    DefaultValue    string
 }
 ```
 
@@ -193,6 +194,7 @@ Configuration fields:
 | `metadataType` | Yes | `Number` or `Timestamp` |
 | `scoringStrategy` | Yes | `Highest`, `Lowest`, `Newest`, or `Oldest` |
 | `timestampFormat` | Conditional | Go time layout used when `metadataType` is `Timestamp` |
+| `defaultValue` | No | Value used when `metadataKey` is missing; must match `metadataType` |
 
 ### Example
 
@@ -215,6 +217,7 @@ profiles:
           metadataSource: "Annotation"
           metadataType: "Number"
           scoringStrategy: "Lowest"
+          defaultValue: "100"  # Treat missing costs as 100
 ```
 
 ### Plugin registration and extension point
@@ -238,12 +241,23 @@ For each candidate node, the plugin:
    strategy.
 4. Returns raw scores for normalization across all feasible nodes.
 
-If the key is missing or the value cannot be parsed, the plugin returns an
-internal invalid score sentinel for that node. During normalization, invalid
-scores are excluded from the valid score range and are normalized to
-`framework.MinNodeScore`. Valid scores are normalized above that reserved
-minimum, so nodes with valid metadata rank ahead of nodes where metadata is
-absent or malformed.
+If the key is missing and `defaultValue` is configured, the plugin parses and
+scores that value exactly as it would a node value. This gives operators a
+baseline that can rank unlabeled nodes above or below labeled nodes. For
+example, a numeric default of `"100"` ranks an unlabeled node between nodes
+whose values are respectively below and above 100 with the `Highest` strategy;
+with `Lowest`, the same value is inverted with every other numeric value.
+
+For timestamp metadata, `defaultValue` is a timestamp in `timestampFormat`, so
+an unlabeled node ranks as though it carried that timestamp. This makes the
+fallback's meaning explicit and remains valid as time advances.
+
+If the key is missing and no default is configured, or if the node value cannot
+be parsed, the plugin returns an internal invalid score sentinel for that node.
+During normalization, invalid scores are excluded from the valid score range
+and are normalized to `framework.MinNodeScore`. Valid scores are normalized
+above that reserved minimum, so nodes with valid metadata or a configured
+fallback rank ahead of nodes with absent or malformed metadata.
 
 #### Numeric metadata
 
@@ -301,6 +315,10 @@ The proposal includes configuration validation with the following checks:
 - `scoringStrategy` must be one of the supported enum values
 - numeric metadata must use `Highest` or `Lowest`
 - timestamp metadata must use `Newest` or `Oldest`
+- a configured `timestampFormat` must contain at least one Go reference-time
+  component and must round-trip a representative timestamp
+- when set, `defaultValue` must parse as the configured metadata type; timestamp
+  defaults must also match `timestampFormat`
 
 For the v1 config API, `timestampFormat` defaults to RFC3339 when
 `metadataType` is `Timestamp` and the field is omitted.
@@ -310,11 +328,12 @@ For the v1 config API, `timestampFormat` defaults to RFC3339 when
 1. The plugin evaluates exactly one metadata key per configuration.
 2. Metadata values are strings on the `Node` object, so typing and freshness are
    external operational concerns.
-3. The plugin does not distinguish between intentionally absent metadata and
-   malformed metadata; both result in the lowest effective influence.
+3. Without `defaultValue`, absent and malformed metadata both result in the
+   lowest effective influence. With `defaultValue`, only absent metadata uses
+   the fallback; malformed metadata remains lowest-scoring.
 4. The invalid metadata sentinel uses `math.MinInt64`. If a configured metadata
-   value is converted to `math.MinInt64`, the plugin treats it as invalid or
-   absent metadata rather than as a valid score.
+   or fallback value is converted to `math.MinInt64`, the plugin treats it as
+   invalid or absent metadata rather than as a valid score.
 5. Numeric metadata is accepted as `float64`, but the scheduler framework uses
    `int64` scores, so numeric values are rounded before scoring. This can cause
    small precision differences for fractional values; use integer metadata
@@ -329,14 +348,16 @@ The implementation is expected to ship with:
 1. unit tests for
     - argument validation and type/strategy compatibility
     - unit tests for raw score calculation for numeric and timestamp metadata
-    - unit tests for normalization behavior, including equal scores and missing metadata
+    - unit tests for normalization behavior, including equal scores, missing
+      metadata, and configured fallback values
 2. integration tests that run the scheduler with only `NodeMetadata` scoring
    enabled and verify placement for:
     - highest numeric labels
     - lowest numeric annotations
     - newest timestamps
     - oldest timestamps
-    - mixed nodes where some candidates are missing metadata
+    - mixed nodes where some candidates are missing metadata, including a
+      numeric and timestamp `defaultValue`
     - decimal numeric values
     - Unix epoch values represented as numbers
 
@@ -400,9 +421,10 @@ Operators should verify:
 3. the scheduler profile enables the plugin with the intended weight
 4. timestamp layouts match the actual string representation on nodes
 
-Because invalid or missing metadata becomes a low score instead of a scheduling
-error, troubleshooting should include inspecting node metadata directly when the
-observed ranking is weaker than expected.
+Because malformed metadata and missing metadata without a configured fallback
+become a low score instead of a scheduling error, troubleshooting should
+include inspecting node metadata directly when the observed ranking is weaker
+than expected.
 
 ## Implementation History
 
