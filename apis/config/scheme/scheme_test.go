@@ -40,6 +40,7 @@ import (
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology"
 	"sigs.k8s.io/scheduler-plugins/pkg/trimaran/loadvariationriskbalancing"
 	"sigs.k8s.io/scheduler-plugins/pkg/trimaran/lowriskovercommitment"
+	"sigs.k8s.io/scheduler-plugins/pkg/trimaran/peaks"
 	"sigs.k8s.io/scheduler-plugins/pkg/trimaran/targetloadpacking"
 	"sigs.k8s.io/yaml"
 )
@@ -88,6 +89,14 @@ profiles:
       - "networkAware"
       weightsName: "netCosts"
       networkTopologyName: "net-topology-v1"
+  - name: Peaks
+    args:
+      WatcherAddress: http://deadbeef:2020
+      NodePowerModel:
+        node-1:
+          k0: 1.5
+          k1: 2
+          k2: -0.5
 `),
 			wantProfiles: []schedconfig.KubeSchedulerProfile{
 				{
@@ -113,6 +122,13 @@ profiles:
 								Namespaces:          []string{"networkAware"},
 								WeightsName:         "netCosts",
 								NetworkTopologyName: "net-topology-v1",
+							},
+						},
+						{
+							Name: peaks.Name,
+							Args: &config.PeaksArgs{
+								WatcherAddress: "http://deadbeef:2020",
+								NodePowerModel: map[string]config.PowerModel{"node-1": {K0: 1.5, K1: 2, K2: -0.5}},
 							},
 						},
 						{
@@ -510,6 +526,13 @@ func TestCodecsEncodePluginConfig(t *testing.T) {
 									ScoringStrategy: config.ScoringStrategyHighest,
 								},
 							},
+							{
+								Name: peaks.Name,
+								Args: &config.PeaksArgs{
+									WatcherAddress: "http://deadbeef:2020",
+									NodePowerModel: map[string]config.PowerModel{"node-1": {K0: 1.5, K1: 2, K2: -0.5}},
+								},
+							},
 						},
 					},
 				},
@@ -617,6 +640,16 @@ profiles:
       scoringStrategy: Highest
       timestampFormat: ""
     name: NodeMetadata
+  - args:
+      NodePowerModel:
+        node-1:
+          k0: 1.5
+          k1: 2
+          k2: -0.5
+      WatcherAddress: http://deadbeef:2020
+      apiVersion: kubescheduler.config.k8s.io/v1
+      kind: PeaksArgs
+    name: Peaks
   schedulerName: scheduler-plugins
 `,
 		},
