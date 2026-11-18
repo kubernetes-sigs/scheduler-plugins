@@ -91,6 +91,7 @@ func (r *PodGroupReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	podList := &v1.PodList{}
 	if err := r.List(ctx, podList,
+		client.InNamespace(pg.Namespace),
 		client.MatchingLabelsSelector{
 			Selector: labels.Set(map[string]string{
 				schedv1alpha1.PodGroupLabel: pg.Name}).AsSelector(),
