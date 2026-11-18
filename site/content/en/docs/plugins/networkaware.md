@@ -62,6 +62,35 @@ profiles:
           networkTopologyName: "net-topology-test" # networkTopology CR to be used by the plugins
 ```
 
+## Spreading replicas across zones
+
+`NetworkOverhead` scores nodes by the network cost to a pod's dependencies, so replicas of the same workload
+can end up in the same zone, where one zone failure takes out all of them. At the weight in the example above,
+the `NetworkOverhead` score can outweigh the default `PodTopologySpread` and `InterPodAffinity` scores (weight 2
+each), so `whenUnsatisfiable: ScheduleAnyway` constraints and preferred pod anti-affinity may not spread the
+replicas. If a workload has to survive a zone failure, add a zone constraint with `DoNotSchedule`, which is
+enforced at Filter, to the pod template's `spec`:
+
+```yaml
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: DoNotSchedule
+    labelSelector:
+      matchLabels:
+        app: my-app # the workload's own pod label
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: ScheduleAnyway
+    labelSelector:
+      matchLabels:
+        app: my-app
+```
+
+Constraints set on a pod replace the scheduler's default spreading, so keep the hostname constraint too. With
+`DoNotSchedule`, a pod stays Pending when every zone it could go to without exceeding `maxSkew` has no node that
+passes the other filters, including the `NetworkOverhead` Filter.
+
 ## Summary
 
 Further details about the network-aware framework are available [here](../kep/260-network-aware-scheduling/README.md).
