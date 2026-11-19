@@ -82,7 +82,7 @@ When choosing a node to place a pod, the custom scoring plugin prefers the node 
 
 - A node's allocatable can be directly obtained from `NodeInfo.Allocatable`. 
 
-- Calcuate the scheduling pods' limit
+- Calculate the scheduling pods' limit
 ```go
 func calculatePodResourceLimit(pod *v1.Pod, resource v1.ResourceName) int64 {
     var podLimit int64
@@ -147,7 +147,7 @@ func calculatePodResourceLimit(pod *v1.Pod, resource v1.ResourceName) int64 {
 ```
 
 - For a best effort pod without specifying a resource limit, a default limit value (e.g., the node's allocatable or configurable value) is used. 
-- Guaranteed pods will be included and calcuated like burstable pods. It means that the proposed plugin will enhance the effect of the default `LeastAllocated` plugin. 
+- Guaranteed pods will be included and calculated like burstable pods. It means that the proposed plugin will enhance the effect of the default `LeastAllocated` plugin. 
 
 - Multiple resource types
 

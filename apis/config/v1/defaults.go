@@ -104,7 +104,7 @@ var (
 	DefaultNetworkTopologyName = "nt-default"
 
 	// Defaults for SySched
-	// DefaultSySchedProfileNamespace is the namesapce of the default syscall profile CR for SySched plugin
+	// DefaultSySchedProfileNamespace is the namespace of the default syscall profile CR for SySched plugin
 	DefaultSySchedProfileNamespace = "default"
 	// DefaultSySchedProfileName is the name of the default syscall profile CR for SySched plugin
 	DefaultSySchedProfileName = "all-syscalls"
