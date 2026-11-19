@@ -62,8 +62,8 @@ Same mechanism is used by other ScoringStrategies for `NodeResourceTopologyMatch
 
 ### Description of calculating required NUMA nodes
 
-It's important to notice the we need to mimic how Topology Manger chooses which bitmask is the most suitable if there are multiple combinations of NUMA nodes that can satisfy the request.
-The narrower bitmask is preffered or if the same number of bits is set then the mask with more lower-numbered bits set wins out([link](https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/cm/topologymanager/bitmask/bitmask.go#L143)).
+It's important to notice the we need to mimic how Topology Manager chooses which bitmask is the most suitable if there are multiple combinations of NUMA nodes that can satisfy the request.
+The narrower bitmask is preferred or if the same number of bits is set then the mask with more lower-numbered bits set wins out([link](https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/cm/topologymanager/bitmask/bitmask.go#L143)).
 
 To calculate how many NUMA nodes are required to run given container/pod the plugin will:
 * generate possible combinations starting from narrowest possible bitmask to widest
