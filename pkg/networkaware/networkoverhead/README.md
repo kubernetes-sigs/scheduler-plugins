@@ -12,9 +12,8 @@ Several dependencies may exist since multiple pods can be already deployed on th
 
 As an initial design, we plan to filter out nodes that unmet a higher number of dependencies to reduce the number of nodes being scored. 
 
-Also, `minBandwidth` requirements will be considered at a later stage. 
-based on the bandwidth capacity / allocatable available in each region / zone. 
-The bandwidth allocatable in each region or zone will be handled by the Network Topology controller previously mentioned.  
+In addition, the plugin checks bandwidth and cost statistics reported by the AppGroup and NetworkTopology controllers
+(see [Bandwidth and cost statistics](#bandwidth-and-cost-statistics) below).
 
 ```go
 // Filter : evaluate if node can respect maxNetworkCost requirements
@@ -45,6 +44,42 @@ func (pl *NetworkOverhead) Filter(ctx context.Context, cycleState *framework.Cyc
     return nil
 }
 ```
+
+#### Bandwidth and cost statistics
+
+The AppGroup and NetworkTopology CRDs carry optional statistics, computed by their controllers:
+
+- `AppGroup.status.appGroupStatistics`: the bandwidth (`minBandwidth`, `avgBandwidth`, `maxBandwidth`) and network cost
+  (`minCost`, `avgCost`, `maxCost`) of the whole AppGroup.
+- `AppGroup.status.topologyOrder[].workloadStatistics`: the same fields for each workload.
+- `NetworkTopology.spec.weights[].topologyList[].originList[].originIntraStatistics` and `originInterStatistics`: the
+  same fields for traffic inside an origin (region, zone or segment) and between origins.
+
+PreFilter reads the intra- and inter-origin statistics of every node's region, zone and segment. Filter then rejects
+a node when the zone or segment it belongs to cannot meet the pod's requirements:
+
+- the AppGroup or workload average bandwidth is higher than the origin's minimum intra bandwidth, or
+- the origin's average intra cost is equal to or higher than the AppGroup or workload average cost.
+
+A node passes these checks when its zone or segment has no statistics (no label or no entry in the NetworkTopology).
+A cost check (AppGroup or workload) is skipped when either cost is zero, since a zero cost means the
+statistic is not available yet.
+
+#### Segments
+
+Besides `topology.kubernetes.io/region` and `topology.kubernetes.io/zone`, nodes can carry the
+`topology.kubernetes.io/segment` label (`ntv1alpha1.NetworkTopologySegment`). PreFilter adds the segment's costs
+and statistics from the NetworkTopology CR, and Filter applies the statistics checks above to segments as well.
+
+#### Missing CRs and requeueing
+
+- If the pod's AppGroup or the configured NetworkTopology CR does not exist (yet), PreFilter returns `Success` and
+  all nodes are scored equally, instead of failing on a nil CR.
+- The AppGroup is looked up in the pod's namespace first, then in the configured `namespaces`.
+- The plugin implements `EnqueueExtensions`: AppGroup and NetworkTopology `Add`/`Update` events requeue a rejected pod
+  when the event concerns the pod's AppGroup or the configured NetworkTopology, and are skipped otherwise.
+- PreFilter logs (V(4)) when the NetworkTopology has no `weightCalculationTime` yet, that is, when the
+  NetworkTopology controller has not completed a calculation.
 
 #### `NetworkOverhead` Filter Example
 
@@ -228,6 +263,10 @@ func (pl *NetworkOverhead) NormalizeScore(ctx context.Context, state *framework.
 }
 ```
 
+A dependency on a node without region and zone labels, or without a cost entry in the NetworkTopology, adds
+`MaxCost` (10000) to the accumulated cost. A node that is missing from the cost map (for example, because its
+topology labels are missing) receives `MaxNodeScore` before normalization, which places it last after normalization.
+
 We plan to combine our scoring plugin with other scoring plugins (e.g., `BalancedAllocation`, `LeastRequestedPriority`, etc). 
 We will attribute a higher weight to our plugin to prefer decisions focused on low latency. 
 For instance, consider the following scheduler config as an example to enable the `NetworkOverhead` plugin:
@@ -271,3 +310,61 @@ After filtering nodes with the `NetworkOverhead` plugin, four nodes remain as ca
 Nodes with the lowest combined network costs will be scored higher: 
 
 <p align="center"><img src="../../../kep/260-network-aware-scheduling/figs/scoreExample.png" title="scoreExample" width="800" class="center"/></p>
+
+---
+
+## Performance
+
+Benchmarks run with `go test -bench='^BenchmarkNetworkOverhead_' -benchmem -benchtime=2s` (`bench_test.go`) on an
+Apple M5 Pro (`GOMAXPROCS=15`), with a controller-runtime fake client. Node counts tested: 10, 100, 500, 1,000.
+
+AppGroup: 3-workload chain (p1→p2, p1→p3). NetworkTopology: 2 regions, 4 zones with defined inter-zone/inter-region
+costs. Scheduled pods: 2 already placed.
+
+### PreFilter
+
+PreFilter builds the `nodeCostMap` and `statisticsMap` for every node in the cluster. Complexity: **O(n)** in node count.
+
+| Nodes | ns/op | B/op | allocs/op |
+|---:|---:|---:|---:|
+| 10 | 46,300 | 51,152 | 567 |
+| 100 | 143,156 | 250,742 | 3,136 |
+| 500 | 573,592 | 1,214,893 | 14,463 |
+| 1,000 | 1,076,598 | 2,399,940 | 28,610 |
+
+Cost grows linearly with node count. At 1,000 nodes it is about 1.1 ms per scheduling cycle.
+
+### Filter
+
+Filter reads the pre-computed satisfied/violated maps and statistics from CycleState. Complexity: **O(1)**,
+independent of cluster size.
+
+| Nodes | Scenario | ns/op | B/op | allocs/op |
+|---:|---|---:|---:|---:|
+| 10 | pass | 269 | 760 | 13 |
+| 10 | reject | 206 | 376 | 8 |
+| 1,000 | pass | 258 | 760 | 13 |
+| 1,000 | reject | 202 | 376 | 8 |
+
+The `reject` path returns after the dependency check; the `pass` path also runs the statistics checks.
+
+### Score
+
+Score reads the accumulated cost from `finalCostMap`. Complexity: **O(1)**.
+
+| Nodes | Scenario | ns/op | B/op | allocs/op |
+|---:|---|---:|---:|---:|
+| 10 | with_cost | 131 | 312 | 8 |
+| 10 | score_equally | 80 | 184 | 5 |
+| 1,000 | with_cost | 126 | 312 | 8 |
+| 1,000 | score_equally | 78 | 184 | 5 |
+
+### Summary
+
+| Extension point | Complexity | 10 nodes (ns/op) | 1,000 nodes (ns/op) |
+|---|---|---:|---:|
+| `PreFilter` | O(n) | 46,300 | 1,076,598 |
+| `Filter` | O(1) | 206 to 269 | 202 to 258 |
+| `Score` | O(1) | 80 to 131 | 78 to 126 |
+
+`PreFilter` is the only cost that scales with the cluster; `Filter` and `Score` stay flat.

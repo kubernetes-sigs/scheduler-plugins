@@ -143,6 +143,43 @@ spec:
           status:
             description: AppGroupStatus defines the observed use.
             properties:
+              appGroupStatistics:
+                description: Statistics for the entire AppGroup
+                properties:
+                  avgBandwidth:
+                    anyOf:
+                    - type: integer
+                    - type: string
+                    description: AvgBandwidth
+                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                    x-kubernetes-int-or-string: true
+                  avgCost:
+                    description: AvgCost
+                    format: int64
+                    type: integer
+                  maxBandwidth:
+                    anyOf:
+                    - type: integer
+                    - type: string
+                    description: MaxBandwidth
+                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                    x-kubernetes-int-or-string: true
+                  maxCost:
+                    description: MaxCost
+                    format: int64
+                    type: integer
+                  minBandwidth:
+                    anyOf:
+                    - type: integer
+                    - type: string
+                    description: MinBandwidth
+                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                    x-kubernetes-int-or-string: true
+                  minCost:
+                    description: MinBandwidth
+                    format: int64
+                    type: integer
+                type: object
               runningWorkloads:
                 description: The number of actively running workloads (e.g., number
                   of pods).
@@ -191,6 +228,44 @@ spec:
                       - kind
                       - name
                       - selector
+                      type: object
+                    workloadStatistics:
+                      description: AppGroupStatistics represents the bandwidth and
+                        cost statistics of the workload.
+                      properties:
+                        avgBandwidth:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          description: AvgBandwidth
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        avgCost:
+                          description: AvgCost
+                          format: int64
+                          type: integer
+                        maxBandwidth:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          description: MaxBandwidth
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        maxCost:
+                          description: MaxCost
+                          format: int64
+                          type: integer
+                        minBandwidth:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          description: MinBandwidth
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        minCost:
+                          description: MinBandwidth
+                          format: int64
+                          type: integer
                       type: object
                   type: object
                 type: array

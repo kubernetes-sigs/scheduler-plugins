@@ -4,8 +4,8 @@ go 1.26.0
 
 require (
 	github.com/containers/common v0.62.3
-	github.com/diktyo-io/appgroup-api v1.0.1-alpha
-	github.com/diktyo-io/networktopology-api v1.0.1-alpha
+	github.com/diktyo-io/appgroup-api v1.0.5-alpha
+	github.com/diktyo-io/networktopology-api v1.0.6-alpha
 	github.com/dustin/go-humanize v1.0.1
 	github.com/go-logr/logr v1.4.3
 	github.com/google/go-cmp v0.7.0

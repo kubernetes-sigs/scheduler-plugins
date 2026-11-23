@@ -94,6 +94,10 @@ spec:
                                         description: Name of the destination (e.g.,
                                           Region Name, Zone Name).
                                         type: string
+                                      isAllowed:
+                                        description: If the communication between
+                                          origin and destination is allowed.
+                                        type: boolean
                                       networkCost:
                                         description: Network Cost between origin and
                                           destination (e.g., Dijkstra shortest path,
@@ -110,6 +114,82 @@ spec:
                                   description: Name of the origin (e.g., Region Name,
                                     Zone Name).
                                   type: string
+                                originInterStatistics:
+                                  description: NetworkTopologyStatistics represents
+                                    the bandwidth and cost statistics of the origin.
+                                  properties:
+                                    avgBandwidth:
+                                      anyOf:
+                                      - type: integer
+                                      - type: string
+                                      description: AvgBandwidth
+                                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                      x-kubernetes-int-or-string: true
+                                    avgCost:
+                                      description: AvgCost
+                                      format: int64
+                                      type: integer
+                                    maxBandwidth:
+                                      anyOf:
+                                      - type: integer
+                                      - type: string
+                                      description: MaxBandwidth
+                                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                      x-kubernetes-int-or-string: true
+                                    maxCost:
+                                      description: MaxCost
+                                      format: int64
+                                      type: integer
+                                    minBandwidth:
+                                      anyOf:
+                                      - type: integer
+                                      - type: string
+                                      description: MinBandwidth
+                                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                      x-kubernetes-int-or-string: true
+                                    minCost:
+                                      description: MinBandwidth
+                                      format: int64
+                                      type: integer
+                                  type: object
+                                originIntraStatistics:
+                                  description: NetworkTopologyStatistics represents
+                                    the bandwidth and cost statistics of the origin.
+                                  properties:
+                                    avgBandwidth:
+                                      anyOf:
+                                      - type: integer
+                                      - type: string
+                                      description: AvgBandwidth
+                                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                      x-kubernetes-int-or-string: true
+                                    avgCost:
+                                      description: AvgCost
+                                      format: int64
+                                      type: integer
+                                    maxBandwidth:
+                                      anyOf:
+                                      - type: integer
+                                      - type: string
+                                      description: MaxBandwidth
+                                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                      x-kubernetes-int-or-string: true
+                                    maxCost:
+                                      description: MaxCost
+                                      format: int64
+                                      type: integer
+                                    minBandwidth:
+                                      anyOf:
+                                      - type: integer
+                                      - type: string
+                                      description: MinBandwidth
+                                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                      x-kubernetes-int-or-string: true
+                                    minCost:
+                                      description: MinBandwidth
+                                      format: int64
+                                      type: integer
+                                  type: object
                               required:
                               - origin
                               type: object
