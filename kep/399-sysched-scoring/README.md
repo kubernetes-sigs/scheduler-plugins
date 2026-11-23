@@ -75,7 +75,7 @@ While pod-centric security schemes such as seccomp are necessary, they alone are
 
 * We also assume each node in the cluster runs a similar Linux kernel version and the resulting seccomp profiles generated either with SPO or other approaches will be for the corresponding host kernel version. The `architecture` field of the pod's seccomp profiles will have to match the corresponding hosts. This is to ensure that the pods' seccomp profiles will be correct and applicable across all the nodes.
 
-Weights can be used to denote the "riskiness" of certain system calls or groups of system calls. We can define riskiness in a few ways but one way is to base on historical CVE data associated with system calls or how system calls are used in known exploits. We discuss how weights can be incorporated in the formulation of ExS below. While weights can be specified through the plugin's configuration or by extending the SPO CRD to encode it, chosing what weight values to use is not straightforward. Hence, implementing weights will depend on the interest/demand from the community.
+Weights can be used to denote the "riskiness" of certain system calls or groups of system calls. We can define riskiness in a few ways but one way is to base on historical CVE data associated with system calls or how system calls are used in known exploits. We discuss how weights can be incorporated in the formulation of ExS below. While weights can be specified through the plugin's configuration or by extending the SPO CRD to encode it, choosing what weight values to use is not straightforward. Hence, implementing weights will depend on the interest/demand from the community.
 
 ### Risks and Mitigations
 
