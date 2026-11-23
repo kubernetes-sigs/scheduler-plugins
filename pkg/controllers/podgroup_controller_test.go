@@ -195,6 +195,38 @@ func Test_Run(t *testing.T) {
 	}
 }
 
+func TestReconcileIgnoresPodsInOtherNamespaces(t *testing.T) {
+	ctx := context.TODO()
+	// The PodGroup lives in "default" and has no Pods of its own.
+	controller, kClient := setUp(ctx, nil, "pg", v1.PodPending, 2, v1alpha1.PodGroupScheduling, nil, nil)
+
+	// Pods in another namespace carry the same pod-group label value.
+	for _, name := range []string{"pod1", "pod2"} {
+		pod := st.MakePod().Namespace("other").Name(name).Obj()
+		pod.Labels = map[string]string{v1alpha1.PodGroupLabel: "pg"}
+		pod.Status.Phase = v1.PodFailed
+		if err := kClient.Create(ctx, pod); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	req := ctrl.Request{NamespacedName: types.NamespacedName{Name: "pg", Namespace: metav1.NamespaceDefault}}
+	if _, err := controller.Reconcile(ctx, req); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+
+	pg := &v1alpha1.PodGroup{}
+	if err := kClient.Get(ctx, req.NamespacedName, pg); err != nil {
+		t.Fatal(err)
+	}
+	if pg.Status.Phase != v1alpha1.PodGroupPending {
+		t.Errorf("want phase %v, got %v", v1alpha1.PodGroupPending, pg.Status.Phase)
+	}
+	if pg.Status.Failed != 0 {
+		t.Errorf("want 0 failed pods, got %v", pg.Status.Failed)
+	}
+}
+
 func TestFillGroupStatusOccupied(t *testing.T) {
 	ctx := context.TODO()
 	cases := []struct {
