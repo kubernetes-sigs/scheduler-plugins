@@ -6,6 +6,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	v1 "k8s.io/api/core/v1"
+	clientcache "k8s.io/client-go/tools/cache"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 )
 
@@ -72,6 +74,46 @@ func TestHandlerCacheCleanup(t *testing.T) {
 			for i, v := range p.ScheduledPodsCache[testNode] {
 				assert.Equal(t, tt.expectedCachePods[i], v.Pod.Name)
 			}
+		})
+	}
+}
+
+func TestHandlerOnDelete(t *testing.T) {
+	testNode := "node-1"
+	pod := st.MakePod().Name("Pod-1").UID("Pod-1").Node(testNode).Obj()
+
+	tests := []struct {
+		name              string
+		obj               interface{}
+		expectedCachePods []string
+	}{
+		{
+			name:              "OnDelete removes a deleted pod",
+			obj:               pod,
+			expectedCachePods: []string{},
+		},
+		{
+			name:              "OnDelete removes a pod delivered as DeletedFinalStateUnknown",
+			obj:               clientcache.DeletedFinalStateUnknown{Key: "default/Pod-1", Obj: pod},
+			expectedCachePods: []string{},
+		},
+		{
+			name:              "OnDelete ignores a DeletedFinalStateUnknown that does not hold a pod",
+			obj:               clientcache.DeletedFinalStateUnknown{Key: "node-1", Obj: &v1.Node{}},
+			expectedCachePods: []string{"Pod-1"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := New()
+			p.ScheduledPodsCache[testNode] = []podInfo{{Timestamp: time.Now(), Pod: pod}}
+			p.OnDelete(tt.obj)
+			cachedPods := []string{}
+			for _, v := range p.ScheduledPodsCache[testNode] {
+				cachedPods = append(cachedPods, v.Pod.Name)
+			}
+			assert.Equal(t, tt.expectedCachePods, cachedPods)
 		})
 	}
 }
