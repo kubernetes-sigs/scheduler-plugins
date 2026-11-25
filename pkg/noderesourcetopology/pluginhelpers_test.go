@@ -158,6 +158,76 @@ func TestGetForeignPodsDetectMode(t *testing.T) {
 	}
 }
 
+func TestGetTerminatedOwnPodsDetectMode(t *testing.T) {
+	detectNone := apiconfig.TerminatedOwnPodsDetectNone
+	detectOnlyExclusiveResources := apiconfig.TerminatedOwnPodsDetectOnlyExclusiveResources
+
+	testCases := []struct {
+		description    string
+		cfg            *apiconfig.NodeResourceTopologyCache
+		preemptionMode apiconfig.PreemptionMode
+		expected       apiconfig.TerminatedOwnPodsDetectMode
+	}{
+		{
+			description:    "nil config",
+			preemptionMode: apiconfig.PreemptionDisabled,
+			expected:       apiconfig.TerminatedOwnPodsDetectNone,
+		},
+		{
+			description:    "empty config",
+			cfg:            &apiconfig.NodeResourceTopologyCache{},
+			preemptionMode: apiconfig.PreemptionDisabled,
+			expected:       apiconfig.TerminatedOwnPodsDetectNone,
+		},
+		{
+			description: "explicit disable",
+			cfg: &apiconfig.NodeResourceTopologyCache{
+				TerminatedOwnPodsDetect: &detectNone,
+			},
+			preemptionMode: apiconfig.PreemptionDisabled,
+			expected:       apiconfig.TerminatedOwnPodsDetectNone,
+		},
+		{
+			description: "explicit OnlyExclusiveResources",
+			cfg: &apiconfig.NodeResourceTopologyCache{
+				TerminatedOwnPodsDetect: &detectOnlyExclusiveResources,
+			},
+			preemptionMode: apiconfig.PreemptionDisabled,
+			expected:       apiconfig.TerminatedOwnPodsDetectOnlyExclusiveResources,
+		},
+		{
+			description:    "preemption enabled forces OnlyExclusiveResources with nil config",
+			preemptionMode: apiconfig.PreemptionEnabled,
+			expected:       apiconfig.TerminatedOwnPodsDetectOnlyExclusiveResources,
+		},
+		{
+			description: "preemption enabled overrides explicit None",
+			cfg: &apiconfig.NodeResourceTopologyCache{
+				TerminatedOwnPodsDetect: &detectNone,
+			},
+			preemptionMode: apiconfig.PreemptionEnabled,
+			expected:       apiconfig.TerminatedOwnPodsDetectOnlyExclusiveResources,
+		},
+		{
+			description: "preemption enabled keeps OnlyExclusiveResources",
+			cfg: &apiconfig.NodeResourceTopologyCache{
+				TerminatedOwnPodsDetect: &detectOnlyExclusiveResources,
+			},
+			preemptionMode: apiconfig.PreemptionEnabled,
+			expected:       apiconfig.TerminatedOwnPodsDetectOnlyExclusiveResources,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.description, func(t *testing.T) {
+			got := getTerminatedOwnPodsDetectMode(testr.New(t), testCase.cfg, testCase.preemptionMode)
+			if got != testCase.expected {
+				t.Errorf("terminated own-pods detect mode got %v expected %v", got, testCase.expected)
+			}
+		})
+	}
+}
+
 func TestGetPreemptionMode(t *testing.T) {
 	preemptionEnabled := apiconfig.PreemptionEnabled
 	preemptionDisabled := apiconfig.PreemptionDisabled

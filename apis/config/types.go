@@ -174,6 +174,14 @@ const (
 	ForeignPodsDetectOnlyExclusiveResources ForeignPodsDetectMode = "OnlyExclusiveResources"
 )
 
+// TerminatedOwnPodsDetectMode is a "string" type.
+type TerminatedOwnPodsDetectMode string
+
+const (
+	TerminatedOwnPodsDetectNone                   TerminatedOwnPodsDetectMode = "None"
+	TerminatedOwnPodsDetectOnlyExclusiveResources TerminatedOwnPodsDetectMode = "OnlyExclusiveResources"
+)
+
 // CacheResyncMethod is a "string" type.
 type CacheResyncMethod string
 
@@ -222,6 +230,17 @@ type NodeResourceTopologyCache struct {
 	// Has no effect if caching is disabled (CacheResyncPeriod is zero) or
 	// if DiscardReservedNodes is enabled. If unspecified, default is "All".
 	ForeignPodsDetect *ForeignPodsDetectMode
+	// TerminatedOwnPodsDetect sets how deletion of pods scheduled by this profile should be handled
+	// for NRT cache consistency. When exclusive-resource pods terminate, the cache may still reflect
+	// their resources as consumed until the next successful resync. Detection restores assumed overlays
+	// when possible, otherwise marks the node so Filter failures become UnschedulableAndUnresolvable
+	// and avoid false preemption. True capacity shortages on that node are also non-preemptable until
+	// flush. It improves pod scheduling by avoiding an extra cycle to refresh the cache. Has no effect
+	// if caching is disabled (CacheResyncPeriod is zero) or if DiscardReservedNodes
+	// is enabled. Defaults to "None". Set to "OnlyExclusiveResources" to enable.
+	// When PreemptionMode is "Enabled", this is forced to "OnlyExclusiveResources" regardless of
+	// the configured value, because stale exclusive-pod accounting can otherwise trigger false preemption.
+	TerminatedOwnPodsDetect *TerminatedOwnPodsDetectMode
 	// ResyncMethod sets how the resync behaves to compute the expected node state.
 	// "All" consider all pods to compute the node state. "OnlyExclusiveResources" consider
 	// only pods regardless of their QoS which have exclusive resources assigned to their
@@ -260,6 +279,8 @@ type NodeResourceTopologyMatchArgs struct {
 	Cache *NodeResourceTopologyCache
 	// PreemptionMode controls the preemption mode of the plugin. Must be explicitly set to
 	// "Enabled" to opt in. Defaults to "Disabled".
+	// When set to "Enabled", cache.TerminatedOwnPodsDetect is forced to "OnlyExclusiveResources"
+	// to avoid false preemption while recently deleted exclusive pods are still reflected in the cache.
 	PreemptionMode *PreemptionMode
 }
 
